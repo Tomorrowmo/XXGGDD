@@ -432,6 +432,6 @@ def plot_symmetry(
 if __name__ == "__main__":
     import sys
     if len(sys.argv) != 4:
-        print("用法: python -m src.QJZ_fluent_post.symmetry_plot <cas.h5> <dat.h5> <output_dir>")
+        print("用法: python -m app.core.qjz_fluent_post.symmetry_plot <cas.h5> <dat.h5> <output_dir>")
         sys.exit(1)
     plot_symmetry(sys.argv[1], sys.argv[2], sys.argv[3])
