@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-ROOT = Path(__file__).parent.parent
+from app.config import ROOT
 MODELS_CONFIG_PATH = ROOT / "models.json"
 
 
