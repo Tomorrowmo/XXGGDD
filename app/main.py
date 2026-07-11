@@ -21,6 +21,7 @@ from openai import AsyncOpenAI
 
 from app.config import ROOT, DATA_DIR
 from app.routers import files as files_router
+from app.routers import charts as charts_router
 
 app = FastAPI(title="组合动力智能评估", version="0.1.0")
 
@@ -40,6 +41,7 @@ from app.core.qjz_fluent_post.http_api import create_fluent_router
 fluent_router = create_fluent_router(ROOT)
 app.include_router(fluent_router)
 app.include_router(files_router.router)
+app.include_router(charts_router.router)
 
 
 @app.get("/")
@@ -56,31 +58,8 @@ async def docs_page():
 
 
 # ---------------------------------------------------------------------------
-# API：交互图表数据
+# API：LLM 诊断
 # ---------------------------------------------------------------------------
-@app.post("/api/chart/pressure-curve")
-async def chart_pressure_curve(body: dict):
-    """根据用户选择的数据文件 + 列索引，生成压力-时间曲线 Plotly JSON"""
-    from app.core.plotter import build_pressure_curve
-
-    filename = body.get("filename", "")
-    time_col = body.get("time_col", 0)
-    value_cols = body.get("value_cols", [])
-
-    if not filename:
-        return JSONResponse({"error": "缺少 filename 参数"}, status_code=400)
-    if not value_cols:
-        return JSONResponse({"error": "缺少 value_cols 参数"}, status_code=400)
-
-    try:
-        fig = build_pressure_curve(filename, time_col, value_cols)
-        return JSONResponse(content=json.loads(fig.to_json()))
-    except FileNotFoundError as e:
-        return JSONResponse({"error": str(e)}, status_code=404)
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
-
-
 @app.post("/api/llm/diagnose")
 async def llm_diagnose(body: dict):
     """LLM 数据诊断 SSE 流式接口，支持模型选择"""
@@ -123,47 +102,6 @@ async def llm_diagnose(body: dict):
         event_stream(), media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
-
-
-@app.post("/api/stats/compute")
-async def stats_compute(body: dict):
-    """计算所有流道通道的统计值"""
-    from app.core.plotter import compute_channel_stats
-
-    filename = body.get("filename", "")
-    if not filename:
-        return JSONResponse({"error": "缺少 filename 参数"}, status_code=400)
-
-    try:
-        result = compute_channel_stats(filename)
-        return JSONResponse(result)
-    except FileNotFoundError as e:
-        return JSONResponse({"error": str(e)}, status_code=404)
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
-
-
-@app.get("/api/chart/channels")
-async def chart_channels(filename: str):
-    """获取文件中所有「流道」相关列的索引和标签"""
-    from app.core.plotter import _read_file, extract_channels
-
-    filepath = DATA_DIR / filename
-    if not filepath.exists():
-        return JSONResponse({"error": f"文件 {filename} 不存在"}, status_code=404)
-
-    try:
-        headers, _ = _read_file(filepath)
-        channels = extract_channels(headers)
-        time_cols = [i for i, h in enumerate(headers) if "time" in h.lower() or "Time" in h]
-        return JSONResponse({
-            "channels": channels,
-            "time_cols": time_cols,
-            "total_cols": len(headers),
-        })
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
-
 
 
 # ---------------------------------------------------------------------------
