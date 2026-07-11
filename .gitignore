@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# 运行时数据 / 大体积资源（不入库）
+Case/
+试验数据整理-2RT/
+QJZ_20260514_demo/
+output_plots/
+data/
+workspace/
+*.docx
+
+# 编辑器 / 临时
+.vscode/
+.superpowers/

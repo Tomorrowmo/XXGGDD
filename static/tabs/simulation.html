@@ -1,0 +1,145 @@
+            <div class="panel-header">🧪 仿真分析 — Fluent HDF5 后处理</div>
+
+            <!-- 算例选择栏 -->
+            <div class="ragflow-toolbar">
+                <div class="ragflow-model-select">
+                    <label class="ragflow-label">📂 算例</label>
+                    <select id="fluent-case-select" class="ragflow-select" onchange="onFluentCaseChange()">
+                        <option value="">-- 加载中... --</option>
+                    </select>
+                </div>
+                <button id="btn-fluent-load" class="action-btn" onclick="loadFluentCaseInfo()" disabled>加载文件</button>
+                <button class="action-btn" onclick="toggleUploadForm()" style="background:var(--accent);color:#fff;border-color:var(--accent);">📤 上传算例</button>
+                <span id="fluent-case-info" style="font-size:0.78rem;color:var(--text-secondary);"></span>
+            </div>
+
+            <!-- 算例上传表单 -->
+            <div id="fluent-upload-form" class="fluent-card" style="display:none;">
+                <div class="fluent-card-title">📤 上传算例文件</div>
+                <div class="fluent-row-2">
+                    <div><label class="fluent-label">算例名称</label><input id="fluent-upload-name" class="fluent-input" type="text" placeholder="如 case4" /></div>
+                    <div><label class="fluent-label">选择文件 (.cas.h5 / .dat.h5)</label><input id="fluent-upload-files" class="fluent-input" type="file" multiple accept=".cas.h5,.dat.h5" /></div>
+                </div>
+                <div class="fluent-actions" style="margin-top:8px;">
+                    <button class="fluent-btn" onclick="startCaseUpload()">开始上传</button>
+                    <span id="fluent-upload-status" style="font-size:0.78rem;color:var(--text-secondary);margin-left:8px;"></span>
+                </div>
+                <div class="upload-progress-wrap" id="fluent-upload-progress-wrap" style="display:none;margin-top:8px;">
+                    <div class="progress-bar-bg"><div class="progress-bar-fill" id="fluent-upload-progress-fill"></div></div>
+                    <div class="progress-text" id="fluent-upload-progress-text"></div>
+                </div>
+            </div>
+
+            <!-- 文件路径 -->
+            <div class="fluent-card">
+                <div class="fluent-card-title">📁 文件路径</div>
+                <div class="fluent-row-2">
+                    <div><label class="fluent-label">.cas.h5</label><input id="fluent-cas-path" class="fluent-input" type="text" placeholder="Case/case1/xxx.cas.h5" readonly /></div>
+                    <div><label class="fluent-label">.dat.h5</label><input id="fluent-dat-path" class="fluent-input" type="text" placeholder="Case/case1/xxx.dat.h5" readonly /></div>
+                </div>
+                <div class="fluent-actions">
+                    <button id="btn-fluent-quick" class="fluent-btn" onclick="runFluentQuickLoad()" disabled>应用路径并计算入口与壁面力</button>
+                    <button class="fluent-btn fluent-btn-sec" onclick="runFluentZones()">读取边界列表</button>
+                </div>
+                <p class="fluent-hint">💡 选择算例后将自动读取 Output/ 已有结果；缺失项再计算。清空结果后可重新生成。</p>
+                <div class="fluent-actions">
+                    <button class="fluent-btn fluent-btn-sec" onclick="runFluentInlet()" disabled id="btn-fluent-inlet">入口参数（重新计算）</button>
+                    <button class="fluent-btn fluent-btn-warn" onclick="runFluentWall()" disabled id="btn-fluent-wall">壁面力（重新计算）</button>
+                    <div class="fluent-btn-dropdown" id="fluent-sym-dropdown">
+                        <button type="button" class="fluent-btn fluent-btn-warn" id="btn-fluent-sym" disabled onclick="toggleFluentSymMenu(event)">
+                            截面云图（耗时较长）<span class="fluent-btn-caret">▾</span>
+                        </button>
+                        <div class="fluent-btn-dropdown-menu" id="fluent-sym-menu" hidden>
+                            <button type="button" onclick="pickFluentSymSection('symmetry')">对称面</button>
+                            <button type="button" onclick="pickFluentSymSection('xy')">XY 平面 (z=0)</button>
+                            <button type="button" onclick="pickFluentSymSection('xz')">XZ 平面 (y=0)</button>
+                        </div>
+                    </div>
+                    <button class="fluent-btn fluent-btn-warn" onclick="runFluentXSlice()" disabled id="btn-fluent-xslice">沿程面平均（耗时很长）</button>
+                    <button class="fluent-btn fluent-btn-warn" onclick="runFluentVLM()" disabled id="btn-fluent-vlm">VLM 云图分析</button>
+                    <button class="fluent-btn fluent-btn-sec" onclick="clearFluentOutput()" disabled id="btn-fluent-clear">清空 Output 结果</button>
+                </div>
+                <p class="fluent-status" id="fluent-status"></p>
+                <p class="fluent-err" id="fluent-err" style="display:none;"></p>
+                <details style="margin-top:8px;"><summary class="fluent-summary">边界列表（JSON）</summary><pre class="fluent-zones-pre" id="fluent-zones-out">{}</pre></details>
+            </div>
+
+            <!-- 入口参数 -->
+            <div class="fluent-card" id="fluent-sec-inlet" style="display:none;">
+                <div class="fluent-card-title">📊 入口参数</div>
+                <div style="overflow-x:auto;">
+                    <table class="fluent-table"><thead><tr>
+                        <th>边界名</th><th>类型</th><th>速度 (m/s)</th><th>静压 (MPa)</th><th>静温 (K)</th><th>质量流量 (kg/s)</th>
+                    </tr></thead><tbody id="fluent-inlet-body"></tbody></table>
+                </div>
+            </div>
+
+            <!-- 壁面力 -->
+            <div class="fluent-card" id="fluent-sec-wall" style="display:none;">
+                <div class="fluent-card-title">📐 壁面力（单位 N）</div>
+                <div class="fluent-sums" id="fluent-sums-all"></div>
+                <div class="fluent-sums" id="fluent-sums-sel"></div>
+                <div style="overflow-x:auto;">
+                    <table class="fluent-table"><thead><tr>
+                        <th><input type="checkbox" id="fluent-chk-all" checked /></th>
+                        <th>壁面名</th>
+                        <th>Fx 压力 (N)</th><th>Fx 黏性 (N)</th><th>Fx 合力 (N)</th>
+                    </tr></thead><tbody id="fluent-wall-body"></tbody></table>
+                </div>
+            </div>
+
+            <!-- 截面云图 -->
+            <div class="fluent-card" id="fluent-sec-sym" style="display:none;">
+                <div class="fluent-card-title">🌈 截面云图</div>
+                <select id="fluent-sym-plane" class="fluent-select" style="margin-bottom:8px;display:none;"></select>
+                <div class="fluent-sym-grid" id="fluent-sym-grid"></div>
+            </div>
+
+            <!-- 沿程面平均 -->
+            <div class="fluent-card" id="fluent-sec-xslice" style="display:none;">
+                <div class="fluent-card-title">📈 沿程面平均（x 方向薄层单元平均）</div>
+                <div class="fluent-xslice-row">
+                    <div class="fluent-xslice-img"><img id="fluent-xslice-img" alt="沿程曲线" /></div>
+                    <div class="fluent-xslice-ctrl">
+                        <label class="fluent-label">物理量</label>
+                        <select id="fluent-xslice-field" class="fluent-select"></select>
+                        <label class="fluent-label">横轴 X 下限 (mm)</label>
+                        <input type="number" id="fluent-x-min" class="fluent-input" step="any" />
+                        <label class="fluent-label">横轴 X 上限 (mm)</label>
+                        <input type="number" id="fluent-x-max" class="fluent-input" step="any" />
+                        <label class="fluent-label">纵轴 Y 下限</label>
+                        <input type="number" id="fluent-y-min" class="fluent-input" step="any" />
+                        <label class="fluent-label">纵轴 Y 上限</label>
+                        <input type="number" id="fluent-y-max" class="fluent-input" step="any" />
+                        <button class="fluent-btn" id="fluent-btn-redraw" onclick="redrawFluentXslice()" style="width:100%;margin-top:8px;">更新曲线图</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- VLM 云图分析结果 -->
+            <div class="fluent-card" id="fluent-sec-vlm" style="display:none;">
+                <div class="fluent-card-title">🤖 VLM 云图分析</div>
+                <div class="fluent-row-2" style="margin-bottom:10px;">
+                    <div><label class="fluent-label">VLM 模型</label>
+                    <select id="fluent-vlm-model" class="fluent-select">
+                        <option value="">-- 加载中... --</option>
+                    </select></div>
+                    <div><label class="fluent-label">云图</label>
+                    <select id="fluent-vlm-select" class="fluent-select">
+                        <option value="">-- 选择云图 --</option>
+                    </select></div>
+                </div>
+                <div class="fluent-vlm-row">
+                    <div class="fluent-vlm-img">
+                        <img id="fluent-vlm-img" alt="待分析云图" />
+                    </div>
+                    <div class="fluent-vlm-chat">
+                        <div id="fluent-vlm-chat-box" class="chat-box" style="min-height:300px;max-height:420px;">
+                            <div id="fluent-vlm-chat-placeholder" class="chat-placeholder">
+                                选择模型和云图后点击「VLM 云图分析」按钮开始分析
+                            </div>
+                        </div>
+                        <div id="fluent-vlm-loading" class="chat-loading"></div>
+                    </div>
+                </div>
+            </div>

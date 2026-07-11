@@ -1,0 +1,134 @@
+/* Fluent 仿真分析 — 单页平铺卡片 */
+.fluent-card {
+    background: var(--card-bg); border: 1px solid var(--card-border);
+    border-radius: var(--radius); padding: 16px 18px; margin-bottom: 14px;
+}
+.fluent-card-title {
+    font-size: 0.92rem; font-weight: 600; color: var(--text);
+    border-bottom: 1px solid var(--card-border); padding-bottom: 6px; margin-bottom: 10px;
+}
+.fluent-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.fluent-label { display: block; font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 3px; }
+.fluent-input {
+    width: 100%; padding: 7px 10px; border-radius: var(--radius-sm);
+    border: 1px solid var(--card-border); background: var(--bg);
+    color: var(--text); font-size: 0.84rem; font-family: var(--font); outline: none;
+}
+.fluent-input:focus { border-color: var(--accent); }
+.fluent-select {
+    width: 100%; padding: 6px 10px; border-radius: var(--radius-sm);
+    border: 1px solid var(--card-border); background: var(--bg);
+    color: var(--text); font-size: 0.82rem; font-family: var(--font); outline: none;
+}
+.fluent-actions {
+    display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px;
+}
+.fluent-btn {
+    padding: 7px 16px; border: none; border-radius: var(--radius-sm);
+    background: var(--accent); color: #fff; font-size: 0.84rem;
+    font-family: var(--font); cursor: pointer; transition: opacity 0.15s;
+}
+.fluent-btn:hover { opacity: 0.85; }
+.fluent-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.fluent-btn-sec {
+    background: var(--placeholder-bg); color: var(--text);
+    border: 1px solid var(--card-border);
+}
+.fluent-btn-warn { background: #d08770; }
+
+/* 与 fluent-btn-warn 同风格的下拉触发按钮 */
+.fluent-btn-dropdown { position: relative; display: inline-flex; }
+.fluent-btn-dropdown > .fluent-btn { display: inline-flex; align-items: center; gap: 6px; }
+.fluent-btn-caret {
+    font-size: 0.72rem; opacity: 0.85; line-height: 1;
+    transform: translateY(1px);
+}
+.fluent-btn-dropdown-menu {
+    position: absolute; top: calc(100% + 4px); left: 0; z-index: 200;
+    min-width: 100%; white-space: nowrap;
+    background: var(--card-bg); border: 1px solid var(--card-border);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+    overflow: hidden;
+}
+.fluent-btn-dropdown-menu button {
+    display: block; width: 100%; padding: 8px 14px;
+    border: none; background: transparent; color: var(--text);
+    font-size: 0.82rem; font-family: var(--font); text-align: left;
+    cursor: pointer; transition: background 0.12s;
+}
+.fluent-btn-dropdown-menu button:hover:not(:disabled) { background: var(--nav-hover-bg); }
+.fluent-btn-dropdown-menu button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* VLM 云图分析 */
+.fluent-vlm-row { display: flex; flex-wrap: wrap; gap: 16px; }
+.fluent-vlm-img { flex: 0 0 360px; }
+.fluent-vlm-img img { width: 100%; border-radius: var(--radius-sm); border: 1px solid var(--card-border); }
+.fluent-vlm-chat { flex: 1; min-width: 300px; }
+.fluent-vlm-chat .chat-box { min-height: 300px; max-height: 420px; }
+@media (max-width: 768px) { .fluent-vlm-row { flex-direction: column; } .fluent-vlm-img { flex: auto; } }
+
+.fluent-hint {
+    font-size: 0.78rem; color: var(--text-secondary); margin: 2px 0 8px;
+    line-height: 1.6; opacity: 0.8;
+}
+
+.fluent-status { font-size: 0.78rem; color: var(--text-secondary); margin: 6px 0 0; }
+.fluent-err { font-size: 0.82rem; color: #ef4444; margin: 6px 0 0; }
+.fluent-summary {
+    font-size: 0.78rem; color: var(--text-secondary);
+    cursor: pointer; display: list-item;
+}
+.fluent-zones-pre {
+    max-height: 160px; overflow: auto; font-size: 0.73rem;
+    background: var(--placeholder-bg); padding: 8px; border-radius: var(--radius-sm);
+    white-space: pre-wrap; color: var(--text-secondary);
+}
+
+/* 壁面力汇总 */
+.fluent-sums {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 10px;
+}
+.fluent-sum-box {
+    background: var(--placeholder-bg); border: 1px solid var(--card-border);
+    border-radius: var(--radius-sm); padding: 8px 10px;
+}
+.fluent-sum-box strong {
+    display: block; font-size: 0.72rem; color: var(--text-secondary); font-weight: 500;
+}
+.fluent-sum-box span { font-size: 0.92rem; font-weight: 600; }
+
+/* 统一表格：全部左对齐 */
+.fluent-table {
+    width: 100%; border-collapse: collapse; font-size: 0.82rem;
+}
+.fluent-table th, .fluent-table td {
+    padding: 5px 8px; border: 1px solid var(--card-border); text-align: left;
+}
+.fluent-table th { background: var(--placeholder-bg); font-weight: 600; }
+.fluent-table tbody tr:hover { background: var(--nav-hover-bg); }
+
+/* 对称面云图网格 */
+.fluent-sym-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+}
+.fluent-sym-item {
+    border: 1px solid var(--card-border); border-radius: var(--radius-sm); overflow: hidden;
+}
+.fluent-sym-item img { width: 100%; display: block; cursor: zoom-in; }
+.fluent-sym-cap {
+    padding: 5px 8px; font-size: 0.76rem; text-align: center;
+    color: var(--text-secondary); background: var(--placeholder-bg);
+}
+
+/* 沿程面平均 */
+.fluent-xslice-row { display: flex; flex-wrap: wrap; gap: 16px; }
+.fluent-xslice-img { flex: 1 1 320px; min-width: 0; }
+.fluent-xslice-img img { max-width: 100%; border-radius: var(--radius-sm); border: 1px solid var(--card-border); }
+.fluent-xslice-ctrl { flex: 0 0 240px; }
+.fluent-xslice-ctrl .fluent-label, .fluent-xslice-ctrl .fluent-input { margin-bottom: 6px; }
+@media (max-width: 768px) {
+    .fluent-sym-grid { grid-template-columns: 1fr; }
+    .fluent-sums { grid-template-columns: 1fr; }
+    .fluent-row-2 { grid-template-columns: 1fr; }
+}

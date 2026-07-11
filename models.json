@@ -1,0 +1,55 @@
+{
+  "models": [
+    {
+      "id": "local/vllm_Qwen2.5-VL-7B",
+      "name": "Qwen2.5-VL-7B (本地 vLLM)",
+      "provider": "local",
+      "api_base": "http://localhost:8000/v1",
+      "api_key_env": null,
+      "model_name": "Qwen2.5-VL-7B",
+      "multimodal": true,
+      "max_tokens": 4096,
+      "temperature": 0.3,
+      "extra_body": {}
+    },
+    {
+      "id": "local/vllm_DS4F",
+      "name": "DS4F (本地 vLLM)",
+      "provider": "local",
+      "api_base": "http://localhost:8001/v1",
+      "api_key_env": "LOCAL_DS_4F",
+      "model_name": "vllm_DS4F",
+      "multimodal": false,
+      "max_tokens": 8192,
+      "temperature": 0.7,
+      "extra_body": {},
+      "api_key": "token-abc123"
+    },
+    {
+      "id": "new/model-id",
+      "name": "新模型",
+      "provider": "local",
+      "api_base": "http://localhost:8000/v1",
+      "api_key_env": null,
+      "model_name": "model-name",
+      "multimodal": false,
+      "max_tokens": 4096,
+      "temperature": 0.3,
+      "extra_body": {},
+      "api_key": "666666"
+    },
+    {
+      "id": "local/gemini",
+      "name": "本地谷歌",
+      "provider": "local",
+      "api_base": "http://localhost:8003/v1",
+      "api_key": "token-abc123",
+      "api_key_env": null,
+      "model_name": "vllm_Gemma-4-31B",
+      "multimodal": false,
+      "max_tokens": 4096,
+      "temperature": 0.3,
+      "extra_body": {}
+    }
+  ]
+}

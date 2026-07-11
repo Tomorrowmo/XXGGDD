@@ -1,0 +1,190 @@
+            <div class="panel-header">🧪 试验分析</div>
+
+            <!-- === 数据管理区 === -->
+            <div class="fluent-card">
+                <div class="fluent-card-title">📁 数据管理</div>
+                <div class="fluent-row-2">
+                    <!-- 上传区 -->
+                    <div class="upload-zone" id="upload-zone" style="padding:16px;min-height:auto;">
+                        <div class="uicon">📁</div>
+                        <div class="upload-hint">点击或拖拽上传试验数据</div>
+                        <div class="upload-hint" style="font-size:0.72rem;margin-top:4px;opacity:0.6">支持 .txt / .csv 格式</div>
+                        <div class="upload-progress-wrap">
+                            <div class="progress-bar-bg">
+                                <div class="progress-bar-fill" id="progress-fill"></div>
+                            </div>
+                            <div class="progress-text" id="progress-text">上传中...</div>
+                            <div class="progress-detail" id="progress-detail"></div>
+                        </div>
+                        <input type="file" id="file-input" accept=".txt,.csv" style="display:none">
+                    </div>
+                    <!-- 文件列表 -->
+                    <div>
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                            <span style="font-size:0.82rem;font-weight:600;color:var(--text-secondary);">已上传文件</span>
+                            <span style="font-size:0.72rem;color:var(--text-secondary);" id="hint-file-count">共 0 个</span>
+                        </div>
+                        <div id="file-list" style="font-size:0.82rem;color:var(--text-secondary);max-height:180px;overflow-y:auto;">
+                            暂无文件
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- === 分析区 === -->
+            <div class="fluent-card">
+                <div class="fluent-card-title">🔬 数据分析</div>
+                <!-- 选择数据源 -->
+                <div class="data-toolbar" style="margin-bottom:12px;">
+                    <span class="toolbar-label">数据源：</span>
+                    <select id="data-file-select" class="file-select">
+                        <option value="">-- 选择已上传的文件 --</option>
+                    </select>
+                    <button id="btn-load-data" class="vlm-btn" onclick="loadDataFile()" style="margin-left:8px;">
+                        📋 加载数据
+                    </button>
+                </div>
+
+            <!-- ====== Step 2: 数据概览（加载后显示） ====== -->
+            <div id="data-overview" style="display:none;margin-top:20px;">
+
+                <!-- 基本统计卡片 -->
+                <div class="data-stats">
+                    <div class="stat-item"><span class="stat-label">文件名</span><span class="stat-value" id="stat-name">-</span></div>
+                    <div class="stat-item"><span class="stat-label">列数</span><span class="stat-value" id="stat-cols">-</span></div>
+                    <div class="stat-item"><span class="stat-label">数据行数</span><span class="stat-value" id="stat-rows">-</span></div>
+                    <div class="stat-item"><span class="stat-label">Header 行</span><span class="stat-value" id="stat-hidx">-</span></div>
+                    <div class="stat-item"><span class="stat-label">文件大小</span><span class="stat-value" id="stat-size">-</span></div>
+                </div>
+
+                <!-- Header 表格 -->
+                <div class="header-table-wrap">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                        <strong style="font-size:0.9rem;">📋 Header 列名速查</strong>
+                        <input type="text" id="header-filter" class="header-filter-input"
+                               placeholder="🔍 搜索列名..."
+                               oninput="filterHeaders()">
+                    </div>
+                    <div class="header-table-scroll">
+                        <table class="header-table" id="header-table">
+                            <thead><tr><th>#</th><th>列名</th></tr></thead>
+                            <tbody id="header-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- ====== Step 3: 快速操作 ====== -->
+                <div class="action-bar">
+                    <span class="action-label">⚡ 快速操作：</span>
+                    <button class="action-btn" id="btn-chart" onclick="switchAnalysisPanel('chart')">📊 交互式压力曲线</button>
+                    <button class="action-btn" id="btn-llm" onclick="switchAnalysisPanel('llm')">🧠 LLM 数据诊断</button>
+                    <button class="action-btn" id="btn-vlm" onclick="switchAnalysisPanel('vlm')">🤖 VLM 对话分析</button>
+                    <button class="action-btn" disabled style="opacity:0.4;">⚠️ 异常检测</button>
+                </div>
+
+                <!-- 面板容器（互斥显示） -->
+                <!-- 分析面板容器（互斥显示） -->
+                <div id="analysis-panels" style="margin-top:20px;">
+
+                <!-- 面板1：交互式图表 -->
+                <div class="analysis-panel" id="panel-chart" style="display:none;">
+                    <div class="chart-layout">
+                        <div class="img-card">
+                            <h3>压力-时间曲线（鼠标悬停显示数值）</h3>
+                            <div id="chart-pressure" style="width:100%;height:520px;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);font-size:0.88rem;">
+                                请在右侧选择通道后点击「刷新图表」
+                            </div>
+                        </div>
+                        <div class="channel-panel">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                                <strong style="font-size:0.85rem;">📋 流道通道选择</strong>
+                                <span style="display:flex;gap:6px;">
+                                    <button class="chan-action" onclick="selectAllChannels()">全选</button>
+                                    <button class="chan-action" onclick="deselectAllChannels()">取消</button>
+                                </span>
+                            </div>
+                            <input type="text" class="chan-filter" id="chan-filter"
+                                   placeholder="🔍 搜索通道..."
+                                   oninput="filterChannelList()">
+                            <div class="chan-list" id="chan-list">
+                                加载数据后显示
+                            </div>
+                            <button id="btn-refresh-chart" class="vlm-btn" onclick="refreshChart()"
+                                    style="width:100%;margin-top:10px;border-color:var(--accent);color:var(--accent);">
+                                🔄 刷新图表
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 面板2：LLM 数据诊断 -->
+                <div class="analysis-panel" id="panel-llm" style="display:none;">
+                    <div style="margin-bottom:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                        <div style="display:flex;align-items:center;gap:6px;">
+                            <span style="font-size:0.78rem;color:var(--text-secondary);">模型</span>
+                            <select id="llm-model-select" class="fluent-select" style="min-width:200px;">
+                                <option value="">-- 加载中... --</option>
+                            </select>
+                        </div>
+                        <button id="btn-llm-diagnose" class="vlm-btn" onclick="startLLMDiagnosis()"
+                                style="border-color:var(--accent);color:var(--accent);">
+                            🤖 开始诊断
+                        </button>
+                        <span style="font-size:0.78rem;color:var(--text-secondary);">自动校验 + AI 诊断（流式输出）</span>
+                    </div>
+
+                    <!-- 诊断对话区 -->
+                    <div class="analysis-card" style="min-height:420px;display:flex;flex-direction:column;">
+                        <h3>💬 诊断对话</h3>
+                        <div id="llm-chat-box" class="chat-box" style="min-height:340px;max-height:460px;">
+                            <div id="llm-chat-placeholder" class="chat-placeholder">
+                                点击「开始诊断」进行自动校验和 AI 分析
+                            </div>
+                        </div>
+                        <div id="llm-chat-loading" class="chat-loading"></div>
+                        <div class="chat-input-row">
+                            <input id="llm-chat-input" class="chat-input" type="text"
+                                   placeholder="输入后续问题..."
+                                   onkeydown="if(event.key==='Enter')sendLLMMessage()">
+                            <button id="btn-llm-send" class="chat-send-btn" onclick="sendLLMMessage()" disabled>发送</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 面板3：VLM 对话 -->
+                <div class="analysis-panel" id="panel-vlm" style="display:none;">
+                    <div style="margin-bottom:10px;display:flex;align-items:center;gap:6px;">
+                        <span style="font-size:0.78rem;color:var(--text-secondary);">模型</span>
+                        <select id="vlm-model-select" class="fluent-select" style="min-width:200px;">
+                            <option value="">-- 加载中... --</option>
+                        </select>
+                    </div>
+                    <div class="analysis-grid">
+                        <div class="analysis-card">
+                            <h3>💬 分析对话</h3>
+                            <div id="chat-box" class="chat-box">
+                                <div id="chat-placeholder" class="chat-placeholder">
+                                    点击下方按钮开始 VLM 分析
+                                </div>
+                            </div>
+                            <div id="chat-loading" class="chat-loading"></div>
+                            <div class="chat-input-row">
+                                <input id="chat-input" class="chat-input" type="text"
+                                       placeholder="输入后续问题，继续讨论..."
+                                       onkeydown="if(event.key==='Enter')sendChatMessage()">
+                                <button id="btn-send" class="chat-send-btn" onclick="sendChatMessage()" disabled>发送</button>
+                                <button id="btn-vlm-start" class="chat-send-btn" style="background:#22c55e;" onclick="startVLMAnalysis()">开始分析</button>
+                            </div>
+                        </div>
+                        <div class="analysis-card">
+                            <h3>🖼️ 待分析图像</h3>
+                            <img src="/results_png/blow-.png" alt="压力曲线图">
+                        </div>
+                    </div>
+                </div>
+
+                </div><!-- end analysis-panels -->
+
+            </div><!-- end data-overview -->
+
+            </div><!-- end fluent-card 数据分析 -->

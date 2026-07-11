@@ -1,0 +1,56 @@
+            <div class="panel-header">🧠 RAGflow</div>
+
+            <!-- 子标签 -->
+            <div class="ragflow-subtabs">
+                <button class="ragflow-subtab active" data-ragflow-sub="sub-chat">💬 通用对话</button>
+                <button class="ragflow-subtab" data-ragflow-sub="sub-kb">📚 知识库</button>
+            </div>
+
+            <!-- 子面板：通用对话 -->
+            <div id="sub-chat" class="ragflow-subpanel active">
+                <div class="ragflow-container">
+                    <!-- 模型选择控制栏 -->
+                    <div class="ragflow-toolbar">
+                        <div class="ragflow-model-select">
+                            <label class="ragflow-label">🤖 模型</label>
+                            <select id="ragflow-model-select" class="ragflow-select">
+                                <option value="">-- 加载中... --</option>
+                            </select>
+                        </div>
+                        <button id="btn-ragflow-test" class="ragflow-test-btn" onclick="testRagflowModel()" title="测试模型连接">⚡</button>
+                        <span class="ragflow-test-status" id="ragflow-test-status"></span>
+                    </div>
+
+                    <!-- 对话区 -->
+                    <div class="ragflow-chat-card">
+                        <div id="ragflow-chat-box" class="chat-box ragflow-chat-box">
+                            <div id="ragflow-chat-placeholder" class="chat-placeholder">
+                                选择一个模型，开始对话
+                            </div>
+                        </div>
+                        <div id="ragflow-chat-loading" class="chat-loading"></div>
+                        <div class="chat-input-row">
+                            <input id="ragflow-chat-input" class="chat-input" type="text"
+                                   placeholder="输入消息..."
+                                   onkeydown="if(event.key==='Enter')sendRagflowMessage()">
+                            <button id="btn-ragflow-send" class="chat-send-btn" onclick="sendRagflowMessage()">发送</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 子面板：知识库 -->
+            <div id="sub-kb" class="ragflow-subpanel">
+                <div class="ragflow-kb-wrap">
+                    <div class="ragflow-kb-bar">
+                        <span>📚 RAGflow 知识库</span>
+                        <a id="rag-kb-link" href="#" target="_blank" class="ragflow-kb-link">🔗 在新窗口打开 →</a>
+                    </div>
+                    <iframe
+                        id="rag-kb-iframe"
+                        src=""
+                        class="ragflow-kb-iframe"
+                        frameborder="0">
+                    </iframe>
+                </div>
+            </div>

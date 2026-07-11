@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>📖 使用文档 — 导弹动力智能评估</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+/* ==========================================================================
+   主题 — 与主站共享 4 套配色
+   ========================================================================== */
+:root {
+    --font: "Source Sans Pro", "Noto Sans SC", "Helvetica Neue", Arial, sans-serif;
+    --doc-nav-w: 260px;
+    --doc-topbar-h: 56px;
+}
+
+[data-theme="deepspace"] {
+    --bg: #0a0e27; --topbar-bg: #0a0e27; --topbar-border: rgba(0,229,255,0.1);
+    --nav-bg: #060918; --nav-text: #7a85a0; --nav-active: #00e5ff; --nav-hover: rgba(0,229,255,0.06);
+    --nav-divider: rgba(0,229,255,0.08); --nav-active-bg: rgba(0,229,255,0.08);
+    --content-bg: #0a0e27; --card-bg: #111640; --card-border: rgba(0,229,255,0.08);
+    --text: #e0e6ff; --text-secondary: #8892b0; --accent: #00e5ff;
+    --code-bg: #0d1130; --table-border: rgba(0,229,255,0.1);
+}
+
+[data-theme="minimal"] {
+    --bg: #f8fafc; --topbar-bg: #ffffff; --topbar-border: #e2e8f0;
+    --nav-bg: #ffffff; --nav-text: #94a3b8; --nav-active: #2563eb; --nav-hover: #f1f5f9;
+    --nav-divider: #e2e8f0; --nav-active-bg: #eff6ff;
+    --content-bg: #f8fafc; --card-bg: #ffffff; --card-border: #e2e8f0;
+    --text: #0f172a; --text-secondary: #64748b; --accent: #2563eb;
+    --code-bg: #f1f5f9; --table-border: #e2e8f0;
+}
+
+[data-theme="cockpit"] {
+    --bg: #0d0d0d; --topbar-bg: #0d0d0d; --topbar-border: #1a1a1a;
+    --nav-bg: #0a0a0a; --nav-text: #595959; --nav-active: #00ff41; --nav-hover: rgba(0,255,65,0.04);
+    --nav-divider: #1a1a1a; --nav-active-bg: rgba(0,255,65,0.05);
+    --content-bg: #0d0d0d; --card-bg: #111; --card-border: #1f1f1f;
+    --text: #00cc34; --text-secondary: #595959; --accent: #00ff41;
+    --code-bg: #0a0a0a; --table-border: #1f1f1f;
+}
+
+[data-theme="sunset"] {
+    --bg: #1a1a24; --topbar-bg: #1a1a24; --topbar-border: rgba(255,107,53,0.08);
+    --nav-bg: #15151e; --nav-text: #8a8a9a; --nav-active: #ff6b35; --nav-hover: rgba(255,107,53,0.06);
+    --nav-divider: rgba(255,107,53,0.08); --nav-active-bg: rgba(255,107,53,0.06);
+    --content-bg: #1a1a24; --card-bg: #1e1e2a; --card-border: rgba(255,107,53,0.06);
+    --text: #e8e0d5; --text-secondary: #908878; --accent: #ff6b35;
+    --code-bg: #15151e; --table-border: rgba(255,107,53,0.08);
+}
+
+/* ==========================================================================
+   基础
+   ========================================================================== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; font-family: var(--font); background: var(--bg); color: var(--text); transition: background 0.3s, color 0.3s; }
+body { display: flex; flex-direction: column; overflow: hidden; }
+
+/* ==========================================================================
+   顶栏
+   ========================================================================== */
+.doc-topbar {
+    height: var(--doc-topbar-h); flex-shrink: 0;
+    background: var(--topbar-bg); border-bottom: 1px solid var(--topbar-border);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 24px;
+}
+.doc-topbar h1 { font-size: 1.1rem; font-weight: 700; letter-spacing: 0.02em; }
+.doc-topbar a {
+    color: var(--accent); text-decoration: none; font-size: 0.85rem; font-weight: 600;
+    padding: 6px 14px; border: 1px solid var(--accent); border-radius: 6px; transition: all 0.15s;
+}
+.doc-topbar a:hover { background: var(--accent); color: #fff; }
+
+/* ==========================================================================
+   主体：左侧导航树 + 右侧内容
+   ========================================================================== */
+.doc-body { flex: 1; display: flex; overflow: hidden; }
+
+/* --- 左侧导航树 --- */
+.doc-nav {
+    width: var(--doc-nav-w); flex-shrink: 0;
+    background: var(--nav-bg); border-right: 1px solid var(--nav-divider);
+    overflow-y: auto; padding: 20px 0;
+    transition: background 0.3s, border-color 0.3s;
+}
+.nav-section { margin-bottom: 8px; }
+.nav-section-title {
+    display: flex; align-items: center; gap: 6px;
+    padding: 8px 20px; font-size: 0.82rem; font-weight: 700;
+    color: var(--text); cursor: pointer; user-select: none;
+    transition: color 0.15s;
+}
+.nav-section-title .arrow { font-size: 0.7rem; transition: transform 0.15s; width: 12px; }
+.nav-section-title.collapsed .arrow { transform: rotate(-90deg); }
+.nav-section-title:hover { color: var(--accent); }
+
+.nav-children { overflow: hidden; }
+.nav-children.collapsed { display: none; }
+
+.nav-link {
+    display: block; padding: 5px 20px 5px 36px;
+    font-size: 0.8rem; color: var(--nav-text); text-decoration: none;
+    border-left: 2px solid transparent; transition: all 0.12s;
+}
+.nav-link:hover { color: var(--text); background: var(--nav-hover); }
+.nav-link.active { color: var(--nav-active); border-left-color: var(--nav-active); background: var(--nav-active-bg); font-weight: 600; }
+
+/* --- 右侧内容区 --- */
+.doc-content { flex: 1; overflow-y: auto; padding: 32px 48px; }
+
+.doc-content h1 { font-size: 2rem; font-weight: 700; margin-bottom: 8px; }
+.doc-content h2 { font-size: 1.45rem; font-weight: 700; margin: 36px 0 14px; padding-bottom: 6px; border-bottom: 1px solid var(--card-border); }
+.doc-content h3 { font-size: 1.15rem; font-weight: 600; margin: 24px 0 10px; }
+.doc-content h4 { font-size: 1rem; font-weight: 600; margin: 16px 0 6px; color: var(--text-secondary); }
+.doc-content p { line-height: 1.85; margin: 10px 0; font-size: 0.95rem; color: var(--text-secondary); }
+.doc-content ul, .doc-content ol { margin: 8px 0 8px 20px; font-size: 0.95rem; color: var(--text-secondary); line-height: 2; }
+.doc-content li { margin: 3px 0; }
+.doc-content table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 0.9rem; }
+.doc-content th, .doc-content td { border: 1px solid var(--table-border); padding: 10px 14px; text-align: left; }
+.doc-content th { background: var(--code-bg); font-weight: 600; color: var(--text); }
+.doc-content td { color: var(--text-secondary); }
+.doc-content code { background: var(--code-bg); padding: 2px 6px; border-radius: 3px; font-size: 0.88rem; }
+.doc-content pre { background: var(--code-bg); padding: 14px 18px; border-radius: 6px; overflow-x: auto; margin: 12px 0; }
+.doc-content pre code { background: none; padding: 0; }
+.doc-content strong { color: var(--text); }
+.doc-content hr { border: none; border-top: 1px solid var(--card-border); margin: 24px 0; }
+.doc-content blockquote { border-left: 3px solid var(--accent); padding: 8px 16px; margin: 12px 0; background: var(--nav-hover); border-radius: 0 4px 4px 0; }
+.doc-content a { color: var(--accent); }
+
+@media (max-width: 768px) {
+    .doc-nav { display: none; }
+    .doc-content { padding: 20px; }
+}
+</style>
+</head>
+<body>
+
+<!-- 顶栏 -->
+<header class="doc-topbar">
+    <h1>📖 使用文档</h1>
+    <a href="/">← 返回主页</a>
+</header>
+
+<!-- 主体 -->
+<div class="doc-body">
+    <!-- 左侧导航树 -->
+    <nav class="doc-nav" id="doc-nav"></nav>
+
+    <!-- 右侧内容 -->
+    <main class="doc-content" id="doc-content">
+        <div style="text-align:center;padding:80px;color:var(--text-secondary);">⏳ 文档加载中...</div>
+    </main>
+</div>
+
+<script>
+// ==========================================================================
+// 主题同步
+// ==========================================================================
+const theme = localStorage.getItem('theme') || 'deepspace';
+document.body.setAttribute('data-theme', theme);
+
+// ==========================================================================
+// 文档内容 (Markdown)
+// ==========================================================================
+const DOC_MD = `
+# 航天发动机热试车数据智能分析系统
+
+以航天液体/固体火箭发动机点火燃烧试验为研究对象，基于大模型 Agent 构建数据自动分析系统，实现从原始试验数据到结构化分析报告的全流程自动化。
+
+---
+
+## 研究方向
+
+航天发动机专业，聚焦液体/固体火箭发动机点火燃烧试验的数据智能分析。
+
+## 项目目标
+
+构建一个基于大模型 Agent 的发动机热试车数据自动分析系统，实现：
+
+1. 原始试验数据自动解析
+2. 统计分析 + 信号处理
+3. LLM/VLM 多模态智能分析
+4. 格式化分析报告输出
+
+## 输入数据
+
+| 数据类型 | 来源 | 格式 |
+|---------|------|------|
+| 试车遥测数据 | 点火燃烧试验传感器采集 | Excel（.xlsx/.xls）、TXT（.txt） |
+| 火焰图像 | 单反相机拍摄 | 尾部火焰图像 / 燃烧室内部火焰图像（JPG/PNG） |
+
+## 分析工作流
+
+\`\`\`
+数据输入 → Python 脚本分析（统计/信号处理） → LLM/VLM 多模态分析 → 格式化输出
+\`\`\`
+
+---
+
+## 快速开始
+
+### 开发环境
+
+| 项目 | 说明 |
+|------|------|
+| 本地开发机 | Windows 10，VS Code（Remote-SSH 连接远程服务器） |
+| 远程服务器 | Ubuntu，8 × NVIDIA H100 GPU |
+| GPU 分配 | 本项目使用 cuda:6 和 cuda:7，其余 GPU 归团队其他成员使用 |
+| Python 环境 | conda 虚拟环境 \`gy_pytorch\` |
+| VLM 服务 | Qwen2.5-VL-7B（vLLM 部署于 localhost:8000） |
+
+### 启动方式
+
+\`\`\`bash
+# 激活环境并启动服务
+source /opt/miniconda3/etc/profile.d/conda.sh && conda activate gy_pytorch
+python demo_server.py
+\`\`\`
+
+### 访问地址
+
+| 地址 | 说明 |
+|------|------|
+| \`http://10.69.140.82:8501\` | 校园网主访问地址 |
+| \`http://localhost:8501\` | 本地访问 |
+| \`http://localhost:8501/docs\` | API 接口文档（FastAPI 自动生成） |
+
+---
+
+## 功能模块
+
+### 模块 1 — 数据导入
+
+- **上传**：点击或拖拽 txt/csv 文件到上传区
+- **进度条**：上传时显示发光边框动画 + 百分比 + 已传/总大小
+- **文件管理**：已上传文件列表显示、重命名、删除
+- **保存位置**：\`data/\` 目录
+- 相关 API：\`POST /api/upload\`、\`GET /api/files\`、\`DELETE /api/files/{name}\`、\`PUT /api/files/{name}/rename\`
+
+### 模块 2 — 数据分析
+
+渐进式三步流程：
+
+#### 第一步：选择数据源
+左侧下拉框选择已上传的数据文件，点击「加载数据」
+
+#### 第二步：数据概览
+加载后显示：
+- 统计卡片：文件名、列数、数据行数、Header 行号、文件大小
+- Header 列名速查表：可滚动表格，支持关键词搜索过滤
+
+#### 第三步：交互分析
+- **交互式压力曲线**：Plotly 双 Y 轴图（压力 MPa + 当量比 Equivalent ratio），5 条压力通道 + 1 条当量比曲线，鼠标悬停显示具体数值，框选缩放
+- **流道压力分布图**：沿流向 X 轴（0–2.85 m），8 个时刻各一条曲线，标记传感器位置
+- **VLM 对话分析**：基于 Qwen2.5-VL-7B 对 blow-.png 压力曲线图进行智能分析，支持多轮对话（上下文 5 轮），SSE 流式输出，Markdown 渲染
+
+相关 API：\`GET /api/data/info?filename=\`、\`GET /api/chart/pressure-time\`、\`GET /api/chart/pressure-distribution\`、\`POST /api/vlm/chat\`、\`GET /api/vlm/analyze-blow\`
+
+### 模块 3 — 异常处理（待实现）
+
+规划功能：
+1. 上传 txt 数据文件，自动解析压力数据列
+2. 3σ 方法检测异常点
+3. Plotly.js 交互式图表（正常曲线 + 异常点红色标注）
+4. 异常统计摘要拼接为 prompt，调用 LLM 分析
+
+---
+
+## 数据格式说明
+
+### 试验数据文件
+
+- **格式**：逗号分隔 txt 文件
+- **编码**：UTF-8
+- **表头行**：headerIndex = 10（即第 11 行为列名）
+- **时间列**：第 0 列（Time (s)）
+- **压力列**：由 \`A00_parameterData.py\` 中的 \`S_index\` 定义，共 54 个压力传感器通道
+- **数据量**：约 4–5 万行
+
+### 传感器布局
+
+| 区域 | 数量 | 轴向位置 |
+|------|:---:|------|
+| 隔离段上侧 | 15 | 0.05–0.80 m |
+| 一级支板/凹腔燃烧室 | 11 | 0.91–1.21 m |
+| 二级支板/凹腔燃烧室 | 10 | 1.28–1.55 m |
+| 火箭段 | 12 | 1.65–2.42 m |
+| 喷管段 | 6 | 2.54–2.84 m |
+
+---
+
+## 技术架构
+
+### 项目结构
+\`\`\`
+data_auto_analysis/
+├── demo_server.py            # FastAPI 主入口
+├── A00_parameterData.py      # 传感器参数定义
+├── B01_blowoff_pressure.py   # 熄火压力分析脚本
+├── src/
+│   ├── plotter.py            # Plotly 图表生成
+│   └── vlm_client.py         # VLM 流式调用
+├── static/
+│   ├── index.html            # 前端主页面
+│   └── docs.html             # 本文档页面
+├── data/                     # 用户上传数据目录
+└── results_png/              # 分析结果图片
+\`\`\`
+
+### 数据流
+1. **交互图表**：Python Plotly → Figure JSON → 前端 Plotly.js
+2. **VLM 对话**：前端 SSE → \`demo_server.py\` → \`src/vlm_client.py\` → vLLM → 逐 token 流式推送
+3. **文件上传**：前端 XMLHttpRequest → FastAPI → 保存至 \`data/\`
+
+### 前端技术
+- **Plotly.js**：交互式科学图表
+- **marked.js**：Markdown 渲染
+- **4 套主题**：深空科技 / 极简白底 / 航天仪表 / 日落发射
+- **CSS 变量**：主题切换通过 \`data-theme\` 属性实现
+
+---
+
+## 常见问题
+
+**Q: 上传文件后数据分析模块看不到？**
+下拉框数据需要刷新，切到数据分析 Tab 会自动刷新文件列表。
+
+**Q: VLM 分析没有反应？**
+确保 vLLM 服务已启动（\`curl http://localhost:8000/health\` 验证）。
+
+**Q: 图表加载失败？**
+检查 \`resourceData/\` 目录下的数据文件是否存在。
+
+**Q: 如何修改分析参数？**
+编辑 \`A00_parameterData.py\` 中的传感器索引和 \`src/plotter.py\` 中的降采样参数。
+
+**Q: 如何重启服务？**
+\`\`\`bash
+pkill -f demo_server
+source /opt/miniconda3/etc/profile.d/conda.sh && conda activate gy_pytorch
+python demo_server.py
+\`\`\`
+
+---
+
+> 项目持续开发中，更多功能即将上线。
+`;
+
+// ==========================================================================
+// 渲染
+// ==========================================================================
+(function initDocs() {
+    const md = DOC_MD.trim();
+    const content = document.getElementById('doc-content');
+    const nav = document.getElementById('doc-nav');
+
+    // 渲染 Markdown
+    content.innerHTML = marked.parse(md);
+
+    // 添加 id 到每个标题以便导航
+    const titles = content.querySelectorAll('h2, h3');
+    const navData = []; // [{type, text, id}]
+    titles.forEach((t, i) => {
+        const id = 'section-' + i;
+        t.id = id;
+        navData.push({ type: t.tagName, text: t.textContent, id });
+    });
+
+    // 构建导航树
+    let navHTML = '';
+    let currentH2Idx = -1;
+
+    navData.forEach(item => {
+        if (item.type === 'H2') {
+            currentH2Idx++;
+            navHTML += `<div class="nav-section">
+                <div class="nav-section-title" data-idx="${currentH2Idx}">
+                    <span class="arrow">▼</span> ${item.text}
+                </div>
+                <div class="nav-children" id="nav-children-${currentH2Idx}"></div>
+            </div>`;
+        } else {
+            navHTML = navHTML.replace(
+                `id="nav-children-${currentH2Idx}"></div>`,
+                `id="nav-children-${currentH2Idx}"><a class="nav-link" href="#${item.id}">${item.text}</a>`
+            );
+        }
+    });
+    nav.innerHTML = navHTML || '<div style="padding:20px;color:var(--text-secondary);font-size:0.85rem;">无目录</div>';
+
+    // 折叠/展开
+    nav.querySelectorAll('.nav-section-title').forEach(title => {
+        title.addEventListener('click', () => {
+            title.classList.toggle('collapsed');
+            const idx = title.dataset.idx;
+            const children = document.getElementById('nav-children-' + idx);
+            if (children) children.classList.toggle('collapsed');
+        });
+    });
+
+    // Scroll spy
+    const allLinks = nav.querySelectorAll('.nav-link');
+    const observer = new IntersectionObserver(entries => {
+        entries.forEach(e => {
+            if (e.isIntersecting) {
+                allLinks.forEach(l => l.classList.remove('active'));
+                const link = nav.querySelector(`a[href="#${e.target.id}"]`);
+                if (link) link.classList.add('active');
+            }
+        });
+    }, { rootMargin: '-10% 0px -80% 0px' });
+    titles.forEach(t => observer.observe(t));
+})();
+</script>
+</body>
+</html>

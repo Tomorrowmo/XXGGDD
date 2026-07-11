@@ -1,0 +1,28 @@
+# ============================================================
+# 导弹动力智能评估 — Python 依赖
+# pip install -r requirements.txt
+# ============================================================
+
+# Web 框架 + 服务器
+fastapi>=0.100,<1
+uvicorn[standard]>=0.30,<1
+python-multipart>=0.0.9
+
+# 环境变量
+python-dotenv>=1.0,<2
+
+# LLM / VLM API 调用
+openai>=2.0,<3
+httpx>=0.27,<1
+
+# 数值计算与数据处理
+numpy>=1.24,<3
+pandas>=2.0,<3
+
+# 图表与可视化
+plotly>=5.0,<7
+matplotlib>=3.7,<4
+pyvista>=0.42,<1
+
+# Fluent HDF5 后处理
+h5py>=3.8,<4

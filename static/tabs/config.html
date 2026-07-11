@@ -1,0 +1,23 @@
+            <div class="panel-header">⚙️ 模型 API 配置</div>
+            <p class="fluent-hint" style="margin-bottom:16px;">管理系统所有大模型 API 连接，修改后即时生效。配置保存至 <code>models.json</code>。</p>
+
+            <div id="config-model-list"></div>
+
+            <!-- RAG 知识库配置 -->
+            <div class="fluent-card" style="margin-top:20px;">
+                <div class="fluent-card-title">📚 RAG 知识库配置</div>
+                <div class="config-row single">
+                    <div><div class="config-label">知识库 iframe URL</div>
+                    <input id="rag-iframe-url" class="config-input" type="text" placeholder="http://10.69.140.82:8091/next-chats/share?shared_id=...&auth=..." /></div>
+                </div>
+                <div class="fluent-actions" style="margin-top:8px;">
+                    <button class="fluent-btn" onclick="configSaveRAG()">💾 保存 RAG 配置</button>
+                    <span id="config-rag-status" style="font-size:0.78rem;color:var(--text-secondary);margin-left:8px;"></span>
+                </div>
+            </div>
+
+            <div class="fluent-actions" style="margin-top:16px;">
+                <button class="fluent-btn" onclick="configAddModel()">+ 新增模型</button>
+                <button class="fluent-btn fluent-btn-warn" onclick="configSaveAll()">💾 保存模型配置</button>
+                <span id="config-save-status" style="font-size:0.8rem;color:var(--text-secondary);margin-left:8px;"></span>
+            </div>

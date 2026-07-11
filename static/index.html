@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>组合动力智能评估</title>
+<script src="https://cdn.plot.ly/plotly-3.1.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<link rel="stylesheet" href="/static/css/common.css">
+<link rel="stylesheet" href="/static/css/ragflow.css">
+<link rel="stylesheet" href="/static/css/simulation.css">
+<link rel="stylesheet" href="/static/css/experiment.css">
+<link rel="stylesheet" href="/static/css/config.css">
+</head>
+<body data-theme="deepspace">
+
+<div class="bg-effects">
+    <div class="bg-nozzle-glow"></div>
+    <div class="bg-spark s1"></div><div class="bg-spark s2"></div><div class="bg-spark s3"></div><div class="bg-spark s4"></div><div class="bg-spark s5"></div>
+    <div class="bg-spark s6"></div><div class="bg-spark s7"></div><div class="bg-spark s8"></div><div class="bg-spark s9"></div><div class="bg-spark s10"></div>
+    <div class="bg-spark s11"></div><div class="bg-spark s12"></div><div class="bg-spark s13"></div><div class="bg-spark s14"></div><div class="bg-spark s15"></div>
+    <div class="bg-spark s16"></div><div class="bg-spark s17"></div><div class="bg-spark s18"></div><div class="bg-spark s19"></div><div class="bg-spark s20"></div>
+</div>
+
+<header class="topbar">
+    <span style="display:flex;align-items:center;gap:16px;">
+        <span class="topbar-title">🚀 组合动力智能评估</span>
+        <a href="/help" class="topbar-docs-btn">📖 Docs</a>
+    </span>
+</header>
+
+<div class="body-row">
+    <nav class="nav-side">
+        <div class="nav-item active" data-tab="tab-ragflow"><span class="icon">🧠</span> RAGflow</div>
+        <div class="nav-item" data-tab="tab-simulation"><span class="icon">🔬</span> 仿真分析</div>
+        <div class="nav-item" data-tab="tab-experiment"><span class="icon">📊</span> 试验分析</div>
+        <div class="nav-item" data-tab="tab-upcoming"><span class="icon">✨</span> 敬请期待</div>
+        <div class="nav-divider"></div>
+        <div class="nav-item" data-tab="tab-config"><span class="icon">⚙️</span> 模型配置</div>
+        <div class="nav-bottom">
+            <label>🎨 界面风格</label>
+            <select id="theme-select">
+                <option value="deepspace">深空科技风</option>
+                <option value="minimal">极简白底风</option>
+                <option value="cockpit">航天仪表风</option>
+                <option value="sunset">日落发射风</option>
+            </select>
+        </div>
+    </nav>
+    <main class="content">
+        <div id="tab-ragflow" class="tab-panel active"></div>
+        <div id="tab-simulation" class="tab-panel"></div>
+        <div id="tab-experiment" class="tab-panel"></div>
+        <div id="tab-upcoming" class="tab-panel"></div>
+        <div id="tab-config" class="tab-panel"></div>
+    </main>
+</div>
+
+<footer class="statusbar">
+    <span><span class="status-dot ok"></span>系统就绪</span>
+    <span>数据来源：未上传</span>
+    <span>GPU：cuda:6,7</span>
+    <span>环境：gy_pytorch</span>
+    <span style="margin-left:auto;opacity:0.5">FastAPI + HTML/JS</span>
+</footer>
+
+<script src="/static/js/common.js"></script>
+<script src="/static/js/config.js"></script>
+<script src="/static/js/ragflow.js"></script>
+<script src="/static/js/simulation.js"></script>
+<script src="/static/js/experiment.js"></script>
+
+<div id="img-lightbox-overlay" class="img-lightbox-overlay" style="display:none;" onclick="closeLightbox()">
+    <button class="img-lightbox-close" onclick="closeLightbox()">✕</button>
+    <img id="img-lightbox-img" src="" alt="" onclick="event.stopPropagation()" />
+    <div class="img-lightbox-cap" id="img-lightbox-cap"></div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,39 @@
+.config-model-card {
+    background: var(--card-bg); border: 1px solid var(--card-border);
+    border-radius: var(--radius); padding: 14px 16px; margin-bottom: 10px;
+}
+.config-model-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 8px; cursor: pointer;
+}
+.config-model-id {
+    font-weight: 600; font-size: 0.88rem;
+}
+.config-model-id .local { color: #22c55e; }
+.config-model-id .remote { color: #3b82f6; }
+.config-model-body { display: none; margin-top: 8px; }
+.config-model-body.open { display: block; }
+.config-row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 6px;
+}
+.config-row.single { grid-template-columns: 1fr; }
+.config-label {
+    font-size: 0.74rem; color: var(--text-secondary); margin-bottom: 2px;
+}
+.config-input {
+    width: 100%; padding: 5px 8px; border-radius: var(--radius-sm);
+    border: 1px solid var(--card-border); background: var(--bg);
+    color: var(--text); font-size: 0.8rem; font-family: var(--font); outline: none;
+}
+.config-input:focus { border-color: var(--accent); }
+.config-actions {
+    display: flex; gap: 6px; margin-top: 8px;
+}
+.config-actions button {
+    padding: 4px 12px; border: 1px solid var(--card-border); border-radius: var(--radius-sm);
+    background: var(--placeholder-bg); color: var(--text);
+    font-size: 0.76rem; cursor: pointer; font-family: var(--font);
+}
+.config-actions button:hover { border-color: var(--accent); }
+.config-actions .del-btn:hover { border-color: #ef4444; color: #ef4444; }
+@media (max-width: 768px) { .config-row { grid-template-columns: 1fr; } }
