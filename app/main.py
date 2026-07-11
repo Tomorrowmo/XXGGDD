@@ -22,6 +22,7 @@ from openai import AsyncOpenAI
 from app.config import ROOT, DATA_DIR
 from app.routers import files as files_router
 from app.routers import charts as charts_router
+from app.routers import diagnose as diagnose_router
 
 app = FastAPI(title="组合动力智能评估", version="0.1.0")
 
@@ -42,6 +43,7 @@ fluent_router = create_fluent_router(ROOT)
 app.include_router(fluent_router)
 app.include_router(files_router.router)
 app.include_router(charts_router.router)
+app.include_router(diagnose_router.router)
 
 
 @app.get("/")
@@ -55,53 +57,6 @@ async def docs_page():
     """使用文档页面"""
     return FileResponse(ROOT / "static" / "docs.html")
 
-
-
-# ---------------------------------------------------------------------------
-# API：LLM 诊断
-# ---------------------------------------------------------------------------
-@app.post("/api/llm/diagnose")
-async def llm_diagnose(body: dict):
-    """LLM 数据诊断 SSE 流式接口，支持模型选择"""
-    from app.core.plotter import compute_channel_stats
-    from app.core.llm_client import SYSTEM_PROMPT, _build_validation_summary
-    from app.core.rag_client import chat_stream
-
-    filename = body.get("filename", "")
-    model_id = body.get("model_id", "").strip()
-    if not filename:
-        return JSONResponse({"error": "缺少 filename 参数"}, status_code=400)
-
-    chat_history = body.get("messages", None)
-
-    try:
-        stats_result = compute_channel_stats(filename)
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
-
-    # 构建诊断消息
-    summary = _build_validation_summary(stats_result["stats"])
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-    if chat_history and len(chat_history) > 0:
-        messages.append({"role": "user", "content": f"以下是本次试验的数据摘要：\n\n{summary}"})
-        recent = chat_history[-10:] if len(chat_history) > 10 else chat_history
-        messages.extend(recent)
-    else:
-        messages.append({"role": "user", "content": summary})
-
-    async def event_stream():
-        try:
-            async for text in chat_stream(model_id, messages):
-                yield f"data: {json.dumps({'text': text})}\n\n"
-                await asyncio.sleep(0)
-            yield f"data: {json.dumps({'done': True})}\n\n"
-        except Exception as e:
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
-
-    return StreamingResponse(
-        event_stream(), media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
 
 
 # ---------------------------------------------------------------------------
