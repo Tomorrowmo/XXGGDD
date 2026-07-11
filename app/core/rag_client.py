@@ -4,7 +4,6 @@ RAGflow 通用模型调用模块
 """
 import json
 import os
-from pathlib import Path
 from typing import AsyncGenerator
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
