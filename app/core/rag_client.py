@@ -4,14 +4,13 @@ RAGflow 通用模型调用模块
 """
 import json
 import os
-from pathlib import Path
 from typing import AsyncGenerator
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
 
-ROOT = Path(__file__).parent.parent
+from app.config import ROOT
 MODELS_CONFIG_PATH = ROOT / "models.json"
 
 

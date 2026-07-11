@@ -9,7 +9,7 @@ from pathlib import Path
 from A00_parameterData import headerIndex
 
 MAX_POINTS = 2000  # 降采样上限
-DATA_DIR = Path(__file__).parent.parent / "data"
+from app.config import DATA_DIR  # 重构后由 config 统一提供项目根 data/ 路径
 
 
 # ---------------------------------------------------------------------------
