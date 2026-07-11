@@ -14,7 +14,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from app.config import ROOT, DATA_DIR
+from app.config import ROOT
 from app.routers import files as files_router
 from app.routers import charts as charts_router
 from app.routers import diagnose as diagnose_router

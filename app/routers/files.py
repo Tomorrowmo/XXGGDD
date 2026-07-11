@@ -2,7 +2,7 @@
 import shutil
 from fastapi import APIRouter, UploadFile, File
 from fastapi.responses import JSONResponse
-from app.config import ROOT, DATA_DIR
+from app.config import ROOT
 
 router = APIRouter()
 
