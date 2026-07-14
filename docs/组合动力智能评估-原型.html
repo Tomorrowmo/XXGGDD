@@ -2010,7 +2010,61 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
     markLive();
   }
 
-  liveCompare(); liveCases(); liveUnits(); liveReport(); liveNL(); liveLLM(); liveChat(); liveExp(); liveSim(); liveSimMulti(); liveExpMulti(); livePending(); liveConfig();
+  // ---- 知识库检索：诚实标注（RAGflow检索 / LLM兜底无出处 / 未配置）----
+  async function liveKB(){
+    var th=document.getElementById('kb-thread'); if(!th) return;
+    var st=await getJSON(API+'/knowledge/status'); if(!st) return;  // 无后端→保持
+    var mode=st.mode;
+    var bar=document.querySelector('#kb-pane-kb .chat-bar');
+    var modeChip=null;
+    if(bar){ modeChip=document.createElement('span'); modeChip.className='badge '+(mode==='ragflow'?'b-high':(mode==='llm_fallback'?'b-med':'b-pending'));
+      modeChip.innerHTML='<span class="d"></span>'+(mode==='ragflow'?'RAGflow 检索':(mode==='llm_fallback'?'LLM 兜底 · 无出处':'未配置检索/大模型'));
+      var sp=bar.querySelector('.spacer'); if(sp) bar.insertBefore(modeChip, sp); else bar.appendChild(modeChip); }
+    // 清掉写死的示例问答；给出与当前模式一致的诚实开场
+    var intro = mode==='ragflow' ? '📚 已接入检索知识库，回答将附原文出处。'
+      : (mode==='llm_fallback' ? '⚠️ 本地未部署 RAGflow 检索库，当前由<b>大模型直答兜底</b>——回答<b>不含本库原文出处</b>，仅供参考。部署 RAGflow 后可返回带出处的检索答案。'
+      : '⚠️ 本地未部署 RAGflow，且大模型未配置。请在「配置」页填入 API Key，或部署 RAGflow 接入真检索。');
+    th.innerHTML='<div class="msg a"><div class="av">📚</div><div class="bubble"><p>'+intro+'</p></div></div>';
+    // 诚实修正输入占位与底部提示
+    var ta=document.getElementById('kb-in'); if(ta) ta.placeholder = mode==='ragflow' ? '向知识库提问…（答案带原文出处）' : '向领域助手提问…（当前无检索库，答案无原文出处）';
+    var hint=document.querySelector('#kb-pane-kb .composer .hint');
+    if(hint) hint.innerHTML = mode==='ragflow' ? '<span>RAGflow 检索增强</span><span>🔒 答案带原文出处</span>'
+      : (mode==='llm_fallback' ? '<span>⚠ 无检索库 · LLM 直答</span><span>答案无原文出处，仅供参考</span>' : '<span>未配置</span>');
+    // 重绑 send/输入（脱离主脚本 mock kbAsk）
+    var sendBtn=document.getElementById('kb-send'); if(!sendBtn) return;
+    var nb=sendBtn.cloneNode(true); sendBtn.parentNode.replaceChild(nb,sendBtn); sendBtn=document.getElementById('kb-send');
+    if(ta){ var nta=ta.cloneNode(true); ta.parentNode.replaceChild(nta,ta); ta=document.getElementById('kb-in'); }
+    function bubble(role,html){ var m=document.createElement('div'); m.className='msg '+(role==='user'?'u':'a');
+      m.innerHTML='<div class="av">'+(role==='user'?'你':'📚')+'</div><div class="bubble">'+html+'</div>'; return m; }
+    async function ask(){
+      var v=(ta.value||'').trim(); if(!v) return;
+      th.appendChild(bubble('user','<p></p>')); th.lastChild.querySelector('p').textContent=v;
+      var a=bubble('assistant','<p class="typing"><i></i><i></i><i></i></p>'); th.appendChild(a);
+      var bb=a.querySelector('.bubble'); ta.value=''; ta.style.height='auto'; th.scrollTop=th.scrollHeight;
+      var acc='', note='';
+      try{
+        var resp=await fetch(API+'/knowledge/query/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:v})});
+        var reader=resp.body.getReader(), dec=new TextDecoder(), buf='';
+        while(true){ var ch=await reader.read(); if(ch.done) break;
+          buf+=dec.decode(ch.value,{stream:true}); var lines=buf.split('\n'); buf=lines.pop();
+          for(var i=0;i<lines.length;i++){ var line=lines[i].trim(); if(line.slice(0,5)!=='data:') continue;
+            var data=line.slice(5).trim(); if(!data||data==='[DONE]') continue;
+            try{ var o=JSON.parse(data);
+              if(o.error){ bb.innerHTML='<p style="color:var(--crit)">'+o.error+'</p>'; }
+              else if(o.meta){ note=o.meta.note||''; }
+              else if(o.delta){ acc+=o.delta; bb.innerHTML=(note?'<div class="note" style="margin:0 0 8px">'+note+'</div>':'')+mdToHtml(acc); th.scrollTop=th.scrollHeight; }
+            }catch(e){}
+          }
+        }
+      }catch(e){ bb.innerHTML='<p style="color:var(--crit)">请求失败</p>'; }
+    }
+    sendBtn.addEventListener('click', ask);
+    ta.addEventListener('keydown', function(e){ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); ask(); }});
+    ta.addEventListener('input', function(e){ e.target.style.height='auto'; e.target.style.height=Math.min(e.target.scrollHeight,120)+'px'; });
+    markLive();
+  }
+
+  liveCompare(); liveCases(); liveUnits(); liveReport(); liveNL(); liveLLM(); liveChat(); liveExp(); liveSim(); liveSimMulti(); liveExpMulti(); livePending(); liveConfig(); liveKB();
 })();
 </script>
 </body></html>

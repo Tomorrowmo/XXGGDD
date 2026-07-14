@@ -42,8 +42,10 @@ export PYTHONIOENCODING=utf-8    # Windows 终端中文防乱码
 2. ~~**PENDING 人工对齐面板**~~ ✅ **已接真**（2026-07-14）：前端 `livePending`（`#pending-panel` 挂在资源库工具栏下），列出 `/api/v2/pending` 各待对齐项，每项一个输入框（datalist 提示已有工况）+ 指定按钮 → POST `/links/{id}/assign-op` → 刷新 pending/cases/units/compare/report/exp-multi + 收起侧栏红点。无 PENDING 时面板隐藏。HTTP 流程测试 `tests/test_pending_api.py`（2 例）。
 3. ~~**报告历史列表**~~ ✅ **已接真**（2026-07-14）：`liveReport` 现同时渲染左侧 `.report-list` 与正文——历史列表 = 各"能出报告的工况"（有实验真值 + 仿真源，逐个探测 `/report/{op}` 的 ok），点击即加载该工况报告正文；无则显空状态。报告未落库为独立实体（`build_report` 按需算），列表即"可评估工况"。`导出 PDF`/`新建`/`追加知识库` 按钮仍是 toast（真 Markdown 导出端点 `/report/{op}/export` 已就绪未接按钮）。API 测试 `tests/test_report_api.py`（3 例）。
 4. ~~**配置·解析/判据配置**~~ ✅ **已接真**（2026-07-14）：后端 `app/services/config_store.py` + `app/routers/config.py`：`GET /api/v2/config/parse` 读真实 `settings.experiment/physics` + 汇报判据来源（sim-knowledge 真扫出 12 域）；`PUT` 改写白名单字段（分隔符/编码/headerIndex/时间列/通道正则/大气修正/γ/R）并落 `parse_config.json`（gitignore），启动 `config_store.load_overrides()` 应用回。正则非法→400。前端 `liveConfig` 表单编辑 + 保存并落盘；判据段只读列 12 域。测试 `tests/test_config_api.py`（3 例）。**注意**：`settings` 是模块级单例，PUT 改的是内存值，测试用例改后要还原避免污染其它用例。
-5. **知识库检索**（`/api/v2/knowledge/*` 是静态注册表；真 RAG 需 RAGflow 服务——本地没有，诚实告知用户，可先用 LLM 兜底）
+5. ~~**知识库检索**~~ ✅ **已接真（诚实三态）**（2026-07-14）：`app/routers/knowledge.py` 重写：`GET /knowledge/status` + `POST /knowledge/query[/stream]` 三态——RAGflow 已配（env `RAGFLOW_API_URL`+`RAGFLOW_API_KEY`，本地未配）→ 检索占位；否则大模型已配 → **LLM 直答兜底，明确标注无检索、sources 恒为 []、不伪造出处**；都无 → 提示未配置。前端 `liveKB` 覆盖 mock：按 status 显模式徽章（RAGflow检索 / LLM兜底·无出处 / 未配置）+ 诚实开场 + 改占位/底部提示，流式解析 meta.note+delta。测试 `tests/test_knowledge_api.py`（5 例）。真检索仍需部署 RAGflow（TODO 在 query 里）。
 6. 对比 L2/L1 视图（已隐藏，只留 L3 真数据；L1 单位评级≈L3排名）
+
+**至此 ①–⑤ 全部接真**（89 pytest 全过）。前端所有主功能无 mock 回退，无数据一律诚实空状态。
 
 前端"实时接线"逻辑都在 `docs/prototype.html` 末尾一个 IIFE 里：`liveCompare/liveCases/liveUnits/liveReport/liveNL/liveLLM/liveChat/liveExp/liveSim`，无后端时优雅回退 mock（探测 `/api/v2/cases` 是否可达）。主脚本的全局函数（openDrawer/refreshSel/go/toast/nlQuery）被 live 脚本覆盖或复用。
 
