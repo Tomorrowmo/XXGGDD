@@ -23,7 +23,7 @@
       "max_tokens": 8192,
       "temperature": 0.7,
       "extra_body": {},
-      "api_key": "token-abc123"
+      "api_key": ""
     },
     {
       "id": "new/model-id",
@@ -36,14 +36,14 @@
       "max_tokens": 4096,
       "temperature": 0.3,
       "extra_body": {},
-      "api_key": "666666"
+      "api_key": ""
     },
     {
       "id": "local/gemini",
       "name": "本地谷歌",
       "provider": "local",
       "api_base": "http://localhost:8003/v1",
-      "api_key": "token-abc123",
+      "api_key": "",
       "api_key_env": null,
       "model_name": "vllm_Gemma-4-31B",
       "multimodal": false,

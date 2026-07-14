@@ -15,3 +15,11 @@ workspace/
 # 编辑器 / 临时
 .vscode/
 .superpowers/
+
+# 密钥 / 运行时（评估平台 v2）—— 绝不入库
+.env
+llm_config.json
+*.db
+eval_platform.db
+var/
+ingest/

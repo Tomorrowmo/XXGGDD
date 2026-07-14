@@ -1,0 +1,1412 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>组合动力智能评估 · 原型</title>
+</head>
+<body>
+<title>组合动力智能评估 · 原型</title>
+<style>
+  /* ============ tokens ============ */
+  :root{
+    --bg:#0b0f19; --bg-2:#0e1422; --surface:#141b2d; --surface-2:#1a2338; --surface-3:#202b45;
+    --border:#243049; --border-strong:#33415e;
+    --text:#e6ecf5; --text-2:#9aa8c2; --text-3:#64748b;
+    --accent:#5ad1e6; --accent-ink:#04222a; --accent-2:#8b98ff;
+    --u1:#5ad1e6; --u2:#f5a623; --u3:#b57cff; /* unit series colors */
+    --good:#3fb984; --warn:#f5a623; --crit:#ef5350; --pending:#c79355;
+    --good-bg:rgba(63,185,132,.14); --warn-bg:rgba(245,166,35,.15);
+    --crit-bg:rgba(239,83,80,.15); --accent-bg:rgba(90,209,230,.13);
+    --pending-bg:rgba(199,147,85,.16);
+    --shadow:0 6px 24px -12px rgba(0,0,0,.7);
+    --r:10px; --r-sm:7px;
+    --ui:-apple-system,system-ui,"Segoe UI Variable","Segoe UI","Microsoft YaHei","PingFang SC",sans-serif;
+    --mono:ui-monospace,"Cascadia Code","SF Mono",Consolas,"Microsoft YaHei",monospace;
+  }
+  @media (prefers-color-scheme: light){
+    :root{
+      --bg:#eef1f8; --bg-2:#e7ebf5; --surface:#ffffff; --surface-2:#f5f7fc; --surface-3:#eaeff8;
+      --border:#dce2ee; --border-strong:#c2cbdd;
+      --text:#182033; --text-2:#54617a; --text-3:#8593ab;
+      --accent:#0e8fa8; --accent-ink:#e7fbff; --accent-2:#4a5adb;
+      --u1:#0e8fa8; --u2:#b9760f; --u3:#7a3fd0;
+      --good:#1f9d6b; --warn:#b9760f; --crit:#d3392f; --pending:#a06a2f;
+      --good-bg:rgba(31,157,107,.12); --warn-bg:rgba(185,118,15,.13);
+      --crit-bg:rgba(211,57,47,.11); --accent-bg:rgba(14,143,168,.1);
+      --pending-bg:rgba(160,106,47,.12);
+      --shadow:0 6px 20px -14px rgba(30,45,80,.4);
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#eef1f8; --bg-2:#e7ebf5; --surface:#ffffff; --surface-2:#f5f7fc; --surface-3:#eaeff8;
+    --border:#dce2ee; --border-strong:#c2cbdd;
+    --text:#182033; --text-2:#54617a; --text-3:#8593ab;
+    --accent:#0e8fa8; --accent-ink:#e7fbff; --accent-2:#4a5adb;
+    --u1:#0e8fa8; --u2:#b9760f; --u3:#7a3fd0;
+    --good:#1f9d6b; --warn:#b9760f; --crit:#d3392f; --pending:#a06a2f;
+    --good-bg:rgba(31,157,107,.12); --warn-bg:rgba(185,118,15,.13);
+    --crit-bg:rgba(211,57,47,.11); --accent-bg:rgba(14,143,168,.1);
+    --pending-bg:rgba(160,106,47,.12);
+    --shadow:0 6px 20px -14px rgba(30,45,80,.4);
+  }
+  :root[data-theme="dark"]{
+    --bg:#0b0f19; --bg-2:#0e1422; --surface:#141b2d; --surface-2:#1a2338; --surface-3:#202b45;
+    --border:#243049; --border-strong:#33415e;
+    --text:#e6ecf5; --text-2:#9aa8c2; --text-3:#64748b;
+    --accent:#5ad1e6; --accent-ink:#04222a; --accent-2:#8b98ff;
+    --u1:#5ad1e6; --u2:#f5a623; --u3:#b57cff;
+    --good:#3fb984; --warn:#f5a623; --crit:#ef5350; --pending:#c79355;
+    --good-bg:rgba(63,185,132,.14); --warn-bg:rgba(245,166,35,.15);
+    --crit-bg:rgba(239,83,80,.15); --accent-bg:rgba(90,209,230,.13);
+    --pending-bg:rgba(199,147,85,.16);
+    --shadow:0 6px 24px -12px rgba(0,0,0,.7);
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0}
+  .app{
+    font-family:var(--ui); color:var(--text); background:var(--bg);
+    font-size:14px; line-height:1.5;
+    background-image:radial-gradient(1200px 600px at 78% -10%, var(--accent-bg), transparent 60%);
+    background-attachment:fixed;
+    display:grid; grid-template-rows:auto 1fr auto; grid-template-columns:228px 1fr;
+    grid-template-areas:"top top" "nav main" "nav foot";
+    height:100vh;
+  }
+  ::selection{background:var(--accent);color:var(--accent-ink)}
+
+  /* ============ top bar ============ */
+  .top{grid-area:top; display:flex; align-items:center; gap:20px; padding:0 20px; height:56px; border-bottom:1px solid var(--border); background:var(--bg-2)}
+  .brand{display:flex; align-items:center; gap:10px; font-weight:650; letter-spacing:.02em; white-space:nowrap}
+  .brand .mark{width:22px;height:22px;border-radius:6px;flex:none;background:conic-gradient(from 210deg,var(--accent),var(--accent-2),var(--accent));box-shadow:0 0 0 1px var(--border-strong), 0 0 14px -2px var(--accent)}
+  .search{flex:1; max-width:520px; display:flex; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--border); border-radius:99px; padding:7px 14px; color:var(--text-2); cursor:text}
+  .search:focus-within{border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-bg)}
+  .search input{border:0;background:transparent;color:var(--text);font-family:var(--ui);font-size:13px;width:100%;outline:none}
+  .search input::placeholder{color:var(--text-3)}
+  .top-right{margin-left:auto; display:flex; align-items:center; gap:10px}
+  select.theme{font-family:var(--ui);font-size:12.5px; color:var(--text-2); background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:6px 10px; cursor:pointer}
+  .ghost-btn{font-family:var(--ui);font-size:12.5px;color:var(--text-2);background:transparent;border:1px solid var(--border);border-radius:8px;padding:6px 12px;cursor:pointer}
+  .ghost-btn:hover{color:var(--text);border-color:var(--border-strong)}
+
+  /* ============ nav ============ */
+  .nav{grid-area:nav; border-right:1px solid var(--border); background:var(--bg-2); padding:14px 12px; display:flex; flex-direction:column; gap:3px; overflow-y:auto}
+  .nav .group-label{font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--text-3);padding:12px 12px 6px; font-weight:600}
+  .nav button.item{display:flex;align-items:center;gap:11px;width:100%;text-align:left;font-family:var(--ui);font-size:13.5px;color:var(--text-2);background:transparent;border:0;border-radius:9px;padding:9px 12px;cursor:pointer;position:relative;transition:background .12s,color .12s}
+  .nav button.item:hover{background:var(--surface);color:var(--text)}
+  .nav button.item.active{background:var(--surface);color:var(--text);font-weight:600}
+  .nav button.item.active::before{content:"";position:absolute;left:-12px;top:8px;bottom:8px;width:3px;border-radius:0 3px 3px 0;background:var(--accent)}
+  .nav .ic{width:18px;text-align:center;font-size:15px;flex:none;filter:saturate(1.1)}
+  .nav .tag{margin-left:auto;font-size:10px;font-family:var(--mono);background:var(--accent-bg);color:var(--accent);border-radius:5px;padding:1px 6px}
+  .nav .badge-dot{margin-left:auto;width:7px;height:7px;border-radius:50%;background:var(--warn);box-shadow:0 0 8px var(--warn)}
+  .nav-spacer{flex:1}
+
+  /* ============ main ============ */
+  .main{grid-area:main; overflow-y:auto; padding:20px 24px 40px}
+  .foot{grid-area:foot;border-top:1px solid var(--border);background:var(--bg-2);display:flex;gap:20px;align-items:center;padding:8px 20px;font-size:11.5px;color:var(--text-3);font-family:var(--mono)}
+  .foot .dot{width:6px;height:6px;border-radius:50%;background:var(--good);box-shadow:0 0 7px var(--good)}
+
+  .screen{display:none; animation:fade .22s ease}
+  .screen.on{display:block}
+  .screen.flex.on{display:flex}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion:reduce){.screen{animation:none}}
+
+  .page-head{display:flex;align-items:flex-end;gap:14px;margin-bottom:16px;flex-wrap:wrap}
+  .page-head h1{font-size:20px;margin:0;letter-spacing:.01em;text-wrap:balance;font-weight:680}
+  .page-head .sub{color:var(--text-2);font-size:12.5px;margin:2px 0 0}
+  .crumbs{font-size:12px;color:var(--text-3);font-family:var(--mono);margin-bottom:4px}
+  .crumbs b{color:var(--text-2);font-weight:500}
+  .spacer{flex:1}
+
+  .toolbar{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+  .btn{font-family:var(--ui);font-size:13px;font-weight:550;cursor:pointer;border-radius:8px;padding:8px 14px;border:1px solid var(--border);background:var(--surface);color:var(--text);display:inline-flex;gap:7px;align-items:center;transition:border-color .12s,background .12s,transform .05s}
+  .btn:hover{border-color:var(--border-strong)}
+  .btn:active{transform:translateY(1px)}
+  .btn.primary{background:var(--accent);color:var(--accent-ink);border-color:transparent;font-weight:650}
+  .btn.primary:hover{filter:brightness(1.08)}
+  .btn.primary:disabled{opacity:.4;cursor:not-allowed;filter:none}
+  .btn.sm{padding:6px 11px;font-size:12.5px}
+  .chip{font-family:var(--ui);font-size:12.5px;color:var(--text-2);cursor:pointer;background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:6px 11px;display:inline-flex;gap:6px;align-items:center}
+  .chip:hover{border-color:var(--border-strong);color:var(--text)}
+  .chip b{color:var(--text);font-weight:600}
+  .seg{display:inline-flex;background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:3px}
+  .seg button{font-family:var(--ui);font-size:12.5px;color:var(--text-2);background:transparent;border:0;border-radius:6px;padding:6px 14px;cursor:pointer;font-weight:550}
+  .seg button.on{background:var(--accent);color:var(--accent-ink);font-weight:650}
+
+  /* subtabs (within sim/exp) */
+  .subtabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:16px}
+  .subtab{font-family:var(--ui);font-size:13.5px;color:var(--text-2);background:transparent;border:0;padding:9px 15px;cursor:pointer;position:relative;font-weight:550;top:1px}
+  .subtab:hover{color:var(--text)}
+  .subtab.on{color:var(--accent);font-weight:650}
+  .subtab.on::after{content:"";position:absolute;left:8px;right:8px;bottom:-1px;height:2px;background:var(--accent);border-radius:2px}
+  .subpane{display:none} .subpane.on{display:block}
+
+  /* cards / grid */
+  .grid{display:grid;gap:14px}
+  .cols-2{grid-template-columns:1fr 1fr}
+  .cols-lib{grid-template-columns:320px 1fr}
+  .cols-sim{grid-template-columns:220px 1fr}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow)}
+  .card-pad{padding:16px}
+  .card h3{margin:0 0 3px;font-size:14px;font-weight:640;display:flex;align-items:center;gap:8px}
+  .card .muted{color:var(--text-2);font-size:12.5px}
+
+  /* badges */
+  .badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px;font-family:var(--mono);letter-spacing:.02em;white-space:nowrap}
+  .badge .d{width:6px;height:6px;border-radius:50%}
+  .b-high{background:var(--good-bg);color:var(--good)} .b-high .d{background:var(--good)}
+  .b-med{background:var(--accent-bg);color:var(--accent)} .b-med .d{background:var(--accent)}
+  .b-low{background:var(--warn-bg);color:var(--warn)} .b-low .d{background:var(--warn)}
+  .b-pending{background:var(--pending-bg);color:var(--pending)} .b-pending .d{background:var(--pending)}
+  .b-good{background:var(--good-bg);color:var(--good)}
+  .b-warn{background:var(--warn-bg);color:var(--warn)}
+  .b-crit{background:var(--crit-bg);color:var(--crit)}
+  .kind{font-size:10.5px;font-family:var(--mono);color:var(--text-3);border:1px solid var(--border);border-radius:5px;padding:1px 6px}
+  .uchip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600}
+  .uchip .sw{width:9px;height:9px;border-radius:2px}
+
+  /* library */
+  .tree{font-size:13px}
+  .tree .u{padding:8px 6px;font-weight:640;color:var(--text);display:flex;align-items:center;gap:7px;cursor:pointer;border-radius:7px}
+  .tree .u:hover{background:var(--surface-2)}
+  .tree .d{padding:6px 6px 6px 22px;color:var(--text-2);cursor:pointer;border-radius:7px;display:flex;align-items:center;gap:7px}
+  .tree .d:hover{background:var(--surface-2);color:var(--text)}
+  .tree .c{padding:5px 6px 5px 40px;color:var(--text-2);cursor:pointer;border-radius:7px;display:flex;align-items:center;gap:8px;font-size:12.5px}
+  .tree .c:hover{background:var(--surface-2);color:var(--text)}
+  .tree .c .nm{font-family:var(--mono)}
+  .caret{color:var(--text-3);font-size:10px;width:10px}
+  .tree .fil{cursor:pointer;border-radius:7px}
+  .tree .fil.on{background:var(--accent-bg);color:var(--accent)}
+  .tree .fil.on .caret{color:var(--accent)}
+  .scopebar{display:flex;align-items:center;gap:9px;margin-bottom:10px;font-size:12.5px;color:var(--text-2)}
+  .scopebar b{color:var(--text)}
+  .ctxbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:10px 14px;margin-bottom:14px;font-size:12.5px;color:var(--text-2)}
+  .ctxbar b{color:var(--text);font-weight:600}
+  .ctxbar .sep{color:var(--border-strong)}
+  .rkn{display:inline-flex;width:20px;height:20px;border-radius:50%;background:var(--surface-3);color:var(--text-2);font-size:11px;font-weight:700;align-items:center;justify-content:center;font-family:var(--mono);flex:none}
+  .rkn.first{background:var(--good);color:#fff}
+  .cell-val.lead{color:var(--accent);font-weight:700}
+  .sect-label{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--text-3);font-weight:600;margin:20px 0 9px}
+  .sect-label:first-child{margin-top:4px}
+  .dcard{display:flex;gap:12px;padding:13px;border:1px solid var(--border);border-radius:var(--r);background:var(--surface);align-items:flex-start;transition:border-color .12s,background .12s;cursor:pointer}
+  .dcard:hover{border-color:var(--accent)}
+  .dcard:hover .nm{color:var(--accent)}
+  .dcard .nm{transition:color .12s}
+  .dcard.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+  .dcard .chk{margin-top:2px;width:17px;height:17px;accent-color:var(--accent);cursor:pointer;flex:none}
+  .dcard .body{flex:1;min-width:0}
+  .dcard .row1{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+  .dcard .nm{font-family:var(--mono);font-weight:640;font-size:14px}
+  .dcard .meta{color:var(--text-2);font-size:12.5px;margin-top:5px;display:flex;gap:15px;flex-wrap:wrap}
+  .dcard .meta b{color:var(--text);font-weight:600;font-family:var(--mono)}
+  .dcard .acts{display:flex;gap:7px;margin-top:10px}
+  .mini{font-size:12px;color:var(--accent-2);background:transparent;border:1px solid var(--border);border-radius:7px;padding:4px 10px;cursor:pointer;font-family:var(--ui)}
+  .mini:hover{border-color:var(--accent-2)}
+
+  /* tables */
+  .tblwrap{overflow-x:auto;border:1px solid var(--border);border-radius:var(--r);background:var(--surface)}
+  table{border-collapse:collapse;width:100%;font-size:13px;min-width:680px}
+  thead th{text-align:left;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-3);font-weight:600;padding:10px 13px;border-bottom:1px solid var(--border);white-space:nowrap;background:var(--bg-2)}
+  tbody td{padding:11px 13px;border-bottom:1px solid var(--border);vertical-align:middle}
+  tbody tr:last-child td{border-bottom:0}
+  tbody tr:hover td{background:var(--surface-2)}
+  td.num,th.num{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right}
+  .qty{font-weight:600}
+  .stripe{border-left:3px solid transparent}
+  .stripe.ok{border-left-color:var(--good)} .stripe.warn{border-left-color:var(--warn)} .stripe.crit{border-left-color:var(--crit)}
+  .cell-val{font-family:var(--mono);font-weight:600}
+  .cell-dev{font-family:var(--mono);font-size:11px;display:block;margin-top:2px}
+  .cell-dev.ok{color:var(--good)} .cell-dev.hi{color:var(--warn)} .cell-dev.bad{color:var(--crit)}
+  .best{position:relative}
+  .best::after{content:"最优";position:absolute;top:6px;right:8px;font-size:9px;font-family:var(--ui);color:var(--good);background:var(--good-bg);padding:0 5px;border-radius:4px;font-weight:600}
+  .winner{font-size:12px;color:var(--text-2)} .winner b{color:var(--accent);font-weight:650}
+
+  /* chart */
+  .chartbox{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:8px;font-size:12px}
+  .legend span{display:inline-flex;align-items:center;gap:6px;color:var(--text-2)}
+  .legend i{width:14px;height:3px;border-radius:2px;display:inline-block}
+  .legend i.dash{background:repeating-linear-gradient(90deg,currentColor 0 4px,transparent 4px 7px);height:2px}
+  svg .grid{stroke:var(--border);stroke-width:1}
+  svg .axis{fill:var(--text-3);font-size:9px;font-family:var(--mono)}
+
+  /* rating */
+  .dots{display:inline-flex;gap:3px}
+  .dots i{width:9px;height:9px;border-radius:50%;background:var(--border-strong)}
+  .dots i.f{background:var(--accent)}
+  .grade{font-family:var(--mono);font-weight:700;font-size:22px}
+  .grade.a{color:var(--good)} .grade.b{color:var(--warn)} .grade.c{color:var(--crit)}
+  .verdict-row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+  .vcard{flex:1;min-width:180px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;position:relative;overflow:hidden}
+  .vcard::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px}
+  .vcard.rank1::before{background:var(--good)} .vcard.rank2::before{background:var(--warn)} .vcard.rank3::before{background:var(--crit)}
+  .vcard .un{font-weight:640;font-size:14px;display:flex;align-items:center;gap:7px}
+  .vcard .avg{font-family:var(--mono);font-size:12px;color:var(--text-2);margin-top:3px}
+  .vcard .g{position:absolute;right:14px;top:12px}
+
+  /* AI diag */
+  .diag{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;margin-top:14px}
+  .diag .hd{display:flex;align-items:center;gap:9px;margin-bottom:9px;font-weight:640;font-size:13.5px}
+  .diag .yuan{width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,var(--accent-2),var(--accent));display:flex;align-items:center;justify-content:center;font-size:12px;color:#fff;font-weight:700}
+  .diag p{margin:0 0 8px;color:var(--text-2);font-size:13px}
+  .diag p:last-child{margin:0}
+  .cite{font-family:var(--mono);font-size:11.5px;color:var(--accent);cursor:pointer;border-bottom:1px dashed var(--accent)}
+
+  .stat-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+  .stat{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:12px 15px;min-width:130px;flex:1}
+  .stat .k{font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.05em}
+  .stat .v{font-family:var(--mono);font-size:19px;font-weight:650;margin-top:4px;font-variant-numeric:tabular-nums}
+  .stat .v small{font-size:12px;color:var(--text-2);font-weight:400}
+
+  /* analysis list (sim single) */
+  .alist{display:flex;flex-direction:column;gap:3px}
+  .aitem{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:8px;cursor:pointer;color:var(--text-2);font-size:13px;border:1px solid transparent}
+  .aitem:hover{background:var(--surface-2);color:var(--text)}
+  .aitem.on{background:var(--surface-2);color:var(--text);border-color:var(--border);font-weight:600}
+  .aitem .ai{width:16px;text-align:center}
+  .aitem .st{margin-left:auto;width:7px;height:7px;border-radius:50%}
+  .aitem .st.ok{background:var(--good)} .aitem .st.warn{background:var(--warn)}
+  .apane{display:none} .apane.on{display:block}
+  .alist .glabel{font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.05em;font-weight:600;padding:9px 11px 4px}
+  .alist .glabel:first-child{padding-top:0}
+  .relbanner{display:flex;gap:12px;align-items:flex-start;background:var(--accent-bg);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:var(--r);padding:12px 15px;margin-bottom:16px;font-size:12.5px;color:var(--text-2);line-height:1.6}
+  .relbanner .ic{font-size:16px;line-height:1.3}
+  .relbanner b{color:var(--text);font-weight:600}
+  .relbanner .lnk{color:var(--accent);cursor:pointer;font-weight:600;border-bottom:1px dashed var(--accent)}
+  /* NL search */
+  .nl-wrap{flex:1;max-width:520px;position:relative}
+  .nl-wrap .search{max-width:none;width:100%}
+  .nl-panel{position:absolute;top:46px;left:0;width:min(600px,86vw);background:var(--surface);border:1px solid var(--border-strong);border-radius:12px;box-shadow:0 16px 44px -12px rgba(0,0,0,.55);z-index:60;padding:11px;display:none}
+  .nl-panel.show{display:block}
+  .nl-hd{font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.05em;font-weight:600;margin:2px 4px 8px;display:flex;align-items:center;gap:8px}
+  .nl-hd span{margin-left:auto;font-family:var(--mono);text-transform:none;letter-spacing:0;color:var(--accent);background:var(--accent-bg);padding:1px 7px;border-radius:5px}
+  .nl-ex{display:block;width:100%;text-align:left;background:transparent;border:0;color:var(--text-2);font-family:var(--ui);font-size:13px;padding:8px 10px;border-radius:8px;cursor:pointer}
+  .nl-ex:hover{background:var(--surface-2);color:var(--text)}
+  .nl-ex::before{content:"🔎";margin-right:8px;opacity:.5;font-size:11px}
+  .nl-cond{display:flex;gap:6px;flex-wrap:wrap;padding:2px 4px 10px}
+  .nl-cond .cc{font-size:11.5px;font-family:var(--mono);background:var(--accent-bg);color:var(--accent);border-radius:6px;padding:3px 8px}
+  .nl-cond .cc b{color:var(--text)}
+  .nl-rows .nr{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;font-size:12.5px;cursor:pointer}
+  .nl-rows .nr:hover{background:var(--surface-2)}
+  .nl-rows .nr .nm{font-family:var(--mono);font-weight:600}
+  .nl-rows .nr .ds{color:var(--text-2);margin-left:auto;font-size:11.5px;font-family:var(--mono)}
+  .nl-empty{color:var(--text-3);font-size:12.5px;padding:10px}
+  /* docs */
+  .dpane{display:none}.dpane.on{display:block}
+  .doc-body h4{color:var(--accent);font-size:14px;margin:0 0 8px}
+  .doc-body h4:not(:first-child){margin-top:20px}
+  .doc-body p,.doc-body li{color:var(--text-2);font-size:13px;line-height:1.7}
+  .doc-body code{font-family:var(--mono);font-size:12px;background:var(--surface-2);padding:1px 5px;border-radius:4px;color:var(--text)}
+  .doc-body .warn-box{background:var(--warn-bg);border-left:3px solid var(--warn);border-radius:8px;padding:10px 13px;margin:12px 0;font-size:12.5px;color:var(--text-2)}
+  .dtag{font-size:10px;font-family:var(--mono);border-radius:5px;padding:1px 6px;margin-left:auto}
+  .dtag.p1{background:var(--good-bg);color:var(--good)} .dtag.p2{background:var(--accent-bg);color:var(--accent)}
+  /* 3D viz */
+  .viz3d{height:250px;border-radius:var(--r);border:1px solid var(--border);position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden;background:radial-gradient(120% 140% at 30% 20%,#1b3a8a,#2b6fb3 30%,#2fae9a 52%,#e6c34a 72%,#e0663a 92%)}
+  .viz3d .lbl{background:rgba(6,12,24,.5);color:#eef4ff;padding:7px 13px;border-radius:8px;font-size:12px;font-family:var(--mono);backdrop-filter:blur(2px)}
+  .viz-cbar{position:absolute;right:12px;top:16px;bottom:16px;width:11px;border-radius:5px;background:linear-gradient(#e0663a,#e6c34a,#2fae9a,#2b6fb3,#1b3a8a);border:1px solid rgba(255,255,255,.35)}
+  .viz-cbar::before{content:"P↑";position:absolute;top:-15px;left:-3px;font-size:9px;color:var(--text-3);font-family:var(--mono)}
+  .phasebar{display:flex;height:38px;border-radius:9px;overflow:hidden;border:1px solid var(--border);font-size:11px;font-family:var(--mono);margin:6px 0 4px}
+  .phasebar>div{display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--text-3);gap:1px;line-height:1.1}
+  .phasebar .steady{background:var(--accent-bg);color:var(--accent);font-weight:700;border-left:2px solid var(--accent);border-right:2px solid var(--accent)}
+  .phasebar .seg{background:var(--surface-2)}
+  /* raw data viewer */
+  .rawtbl{font-family:var(--mono);font-size:12px;min-width:720px}
+  .rawtbl th,.rawtbl td{padding:6px 12px;font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;border-bottom:1px solid var(--border)}
+  .rawtbl thead th{background:var(--bg-2);color:var(--text-2);position:sticky;top:0}
+  .rawtbl td:first-child,.rawtbl th:first-child{text-align:left;color:var(--text-3)}
+  .rawtbl tbody tr:hover td{background:var(--surface-2)}
+  .rawmeta{font-family:var(--mono);font-size:11.5px;color:var(--text-2);background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;white-space:pre-wrap;line-height:1.7;margin:0}
+  .pager{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12px;color:var(--text-2);font-family:var(--mono);flex-wrap:wrap}
+  .pager button{font-family:var(--mono);font-size:12px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 9px;cursor:pointer;color:var(--text-2)}
+  .pager button:hover{border-color:var(--border-strong);color:var(--text)}
+  .pager input{width:64px;font-family:var(--mono);font-size:12px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--text);text-align:right}
+  /* data preview drawer */
+  .drawer-mask{position:fixed;inset:0;background:rgba(4,8,16,.5);opacity:0;pointer-events:none;transition:.2s;z-index:70}
+  .drawer-mask.show{opacity:1;pointer-events:auto}
+  .drawer{position:fixed;top:0;right:0;bottom:0;width:min(620px,94vw);background:var(--bg);border-left:1px solid var(--border-strong);box-shadow:-18px 0 50px -20px rgba(0,0,0,.6);z-index:71;transform:translateX(100%);transition:transform .24s ease;display:flex;flex-direction:column}
+  .drawer.show{transform:none}
+  @media (prefers-reduced-motion:reduce){.drawer{transition:none}}
+  .drawer-hd{display:flex;align-items:flex-start;gap:12px;padding:16px 18px;border-bottom:1px solid var(--border);background:var(--bg-2)}
+  .drawer-title{font-size:16px;font-weight:700;font-family:var(--mono)}
+  .drawer-sub{font-size:12px;color:var(--text-2);margin-top:3px}
+  .drawer-body{flex:1;overflow-y:auto;padding:16px 18px}
+  .drawer-foot{display:flex;gap:9px;padding:12px 18px;border-top:1px solid var(--border);background:var(--bg-2)}
+  /* CFD slice thumbnails */
+  .jet-sym{background:linear-gradient(90deg,#1b3a8a,#2b8fb3 22%,#2fae9a 42%,#e6c34a 58%,#e0663a 68%,#e6c34a 80%,#2b6fb3)}
+  .jet-xy{background:linear-gradient(72deg,#1b3a8a,#2b8fb3 30%,#2fae9a 52%,#e6c34a 72%,#e0663a)}
+  .jet-xz{background:linear-gradient(108deg,#1b3a8a,#2b6fb3 25%,#2fae9a 50%,#e6c34a 70%,#e0663a 92%)}
+  .jet-cross{background:radial-gradient(circle at 50% 46%,#e0663a,#e6c34a 27%,#2fae9a 52%,#2b6fb3 76%,#1b3a8a)}
+  .slices{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:6px}
+  .slice{border-radius:8px;overflow:hidden;border:1px solid var(--border);cursor:pointer;transition:border-color .12s}
+  .slice:hover{border-color:var(--accent)}
+  .slice .img{height:86px}
+  .slice .cap{font-size:11px;padding:5px 9px;color:var(--text-2);background:var(--surface);display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border)}
+  .slice .cap span{font-family:var(--mono);color:var(--text-3);font-size:10px}
+  .cardthumb{width:54px;height:54px;border-radius:8px;flex:none;border:1px solid var(--border);overflow:hidden;display:flex;align-items:center;justify-content:center}
+  /* KB citations */
+  .cite-mark{color:var(--accent);font-size:10px;font-weight:700;vertical-align:super;cursor:pointer;margin-left:1px}
+  .src-block{margin-top:11px;padding-top:10px;border-top:1px solid var(--border)}
+  .src-hd{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-3);font-weight:600;margin-bottom:7px}
+  .src-item{display:flex;gap:9px;align-items:flex-start;padding:7px 9px;border-radius:8px;background:var(--surface);border:1px solid var(--border);margin-bottom:6px;cursor:pointer}
+  .src-item:hover{border-color:var(--accent)}
+  .src-n{width:18px;height:18px;border-radius:5px;background:var(--accent-bg);color:var(--accent);font-family:var(--mono);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none;margin-top:1px}
+  .src-t{font-size:12.5px;font-weight:600}
+  .src-m{font-size:11px;color:var(--text-3);font-family:var(--mono);margin-top:2px}
+  .src-snip{font-size:11.5px;color:var(--text-2);margin-top:4px;font-style:italic;line-height:1.5}
+  /* modal */
+  .modal-mask{position:fixed;inset:0;background:rgba(4,8,16,.55);opacity:0;pointer-events:none;transition:.2s;z-index:72}
+  .modal-mask.show{opacity:1;pointer-events:auto}
+  .modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-47%);width:min(720px,94vw);max-height:86vh;background:var(--bg);border:1px solid var(--border-strong);border-radius:14px;box-shadow:0 30px 70px -20px rgba(0,0,0,.6);z-index:73;opacity:0;pointer-events:none;transition:.2s;display:flex;flex-direction:column}
+  .modal.show{opacity:1;pointer-events:auto;transform:translate(-50%,-50%)}
+  .modal-hd{display:flex;align-items:center;gap:10px;padding:15px 18px;border-bottom:1px solid var(--border);font-weight:650;font-size:15px}
+  .modal-body{padding:16px 18px;overflow-y:auto}
+
+  /* image mock */
+  .iframe-mock{height:210px;background:repeating-linear-gradient(45deg,var(--surface-2),var(--surface-2) 12px,var(--surface-3) 12px,var(--surface-3) 24px);border:1px solid var(--border);border-radius:var(--r);display:flex;align-items:center;justify-content:center;color:var(--text-3);font-family:var(--mono);font-size:12px}
+  .note{font-size:11.5px;color:var(--text-3);margin-top:8px;font-style:italic}
+  .placeholder{border:1px dashed var(--border-strong);border-radius:var(--r);padding:20px;color:var(--text-3);background:var(--surface)}
+
+  /* ============ CHAT ============ */
+  .chat{display:grid;grid-template-columns:230px 1fr;gap:0;height:100%;width:100%;border:1px solid var(--border);border-radius:var(--r);overflow:hidden;background:var(--surface)}
+  .chat-side{border-right:1px solid var(--border);background:var(--bg-2);display:flex;flex-direction:column;min-height:0}
+  .chat-side .sh{padding:12px;display:flex;flex-direction:column;gap:8px;border-bottom:1px solid var(--border)}
+  .newconv{width:100%;justify-content:center}
+  .kb-toggle{display:flex;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:3px}
+  .kb-toggle button{flex:1;font-family:var(--ui);font-size:12px;color:var(--text-2);background:transparent;border:0;border-radius:6px;padding:6px;cursor:pointer;font-weight:550}
+  .kb-toggle button.on{background:var(--accent);color:var(--accent-ink);font-weight:650}
+  .convs{flex:1;overflow-y:auto;padding:8px}
+  .convs .cl{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-3);padding:8px 8px 5px;font-weight:600}
+  .conv{padding:9px 10px;border-radius:8px;cursor:pointer;font-size:12.5px;color:var(--text-2);display:flex;flex-direction:column;gap:2px}
+  .conv:hover{background:var(--surface)}
+  .conv.on{background:var(--surface);color:var(--text)}
+  .conv .t{font-weight:550;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .conv .m{font-size:11px;color:var(--text-3);font-family:var(--mono)}
+  .chat-main{display:flex;flex-direction:column;min-height:0;min-width:0}
+  .chat-bar{display:flex;align-items:center;gap:10px;padding:11px 16px;border-bottom:1px solid var(--border);background:var(--bg-2)}
+  .model-pick{font-family:var(--ui);font-size:13px;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 11px;cursor:pointer;font-weight:600}
+  .param{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--text-2)}
+  .param input[type=range]{accent-color:var(--accent);width:80px}
+  .thread{flex:1;overflow-y:auto;padding:20px 22px;display:flex;flex-direction:column;gap:16px}
+  .msg{display:flex;gap:11px;max-width:80%}
+  .msg .av{width:28px;height:28px;border-radius:7px;flex:none;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700}
+  .msg.u{align-self:flex-end;flex-direction:row-reverse}
+  .msg.u .av{background:var(--accent);color:var(--accent-ink)}
+  .msg.a .av{background:linear-gradient(135deg,var(--accent-2),var(--accent));color:#fff}
+  .bubble{background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:11px 14px;font-size:13.5px;color:var(--text);line-height:1.6}
+  .msg.u .bubble{background:var(--accent-bg);border-color:transparent}
+  .bubble p{margin:0 0 8px} .bubble p:last-child{margin:0}
+  .bubble code{font-family:var(--mono);font-size:12px;background:var(--surface-3);padding:1px 5px;border-radius:4px}
+  .bubble .src{margin-top:9px;padding-top:9px;border-top:1px solid var(--border);font-size:11.5px;color:var(--text-2)}
+  .bubble .src b{color:var(--accent);font-weight:600;cursor:pointer}
+  .typing{display:inline-flex;gap:4px;align-items:center}
+  .typing i{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:blink 1.2s infinite}
+  .typing i:nth-child(2){animation-delay:.2s} .typing i:nth-child(3){animation-delay:.4s}
+  @keyframes blink{0%,60%,100%{opacity:.25}30%{opacity:1}}
+  @media (prefers-reduced-motion:reduce){.typing i{animation:none;opacity:.6}}
+  .composer{border-top:1px solid var(--border);padding:12px 16px;background:var(--bg-2)}
+  .composer .box{display:flex;gap:10px;align-items:flex-end;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px 12px}
+  .composer .box:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-bg)}
+  .composer textarea{flex:1;border:0;background:transparent;color:var(--text);font-family:var(--ui);font-size:13.5px;resize:none;outline:none;max-height:120px;line-height:1.5}
+  .composer .tools{display:flex;gap:6px;align-items:center}
+  .icbtn{width:32px;height:32px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text-2);cursor:pointer;font-size:14px}
+  .icbtn:hover{color:var(--text);border-color:var(--border-strong)}
+  .send{width:34px;height:34px;border-radius:9px;border:0;background:var(--accent);color:var(--accent-ink);cursor:pointer;font-size:15px;font-weight:700}
+  .composer .hint{font-size:11px;color:var(--text-3);margin-top:7px;display:flex;gap:14px}
+
+  /* report */
+  .report{max-width:780px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:28px 32px;box-shadow:var(--shadow)}
+  .report h2{font-size:18px;margin:0 0 4px}
+  .report .rmeta{color:var(--text-3);font-size:12px;font-family:var(--mono);margin-bottom:20px}
+  .report h4{font-size:14px;margin:20px 0 8px;color:var(--accent);letter-spacing:.02em}
+  .report p{color:var(--text-2);font-size:13.5px;margin:0 0 10px}
+  .report ul{color:var(--text-2);font-size:13.5px;margin:0 0 10px;padding-left:20px}
+  .report li{margin-bottom:5px}
+  .report-list{width:270px;flex:none}
+  .rl-item{padding:11px 13px;border:1px solid var(--border);border-radius:9px;margin-bottom:8px;cursor:pointer;background:var(--surface)}
+  .rl-item:hover{border-color:var(--border-strong)}
+  .rl-item.on{border-color:var(--accent)}
+  .rl-item .t{font-weight:600;font-size:13px}
+  .rl-item .m{font-size:11px;color:var(--text-3);font-family:var(--mono);margin-top:3px}
+
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--surface);border:1px solid var(--border-strong);border-radius:10px;padding:11px 18px;font-size:13px;box-shadow:0 10px 30px -10px rgba(0,0,0,.6);opacity:0;pointer-events:none;transition:.25s;z-index:50;color:var(--text);display:flex;align-items:center;gap:9px}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .toast .d{width:7px;height:7px;border-radius:50%;background:var(--accent)}
+
+  @media (max-width:900px){
+    .app{grid-template-columns:1fr;grid-template-areas:"top" "main" "foot"}
+    .nav{display:none}
+    .cols-2,.cols-lib,.cols-sim{grid-template-columns:1fr}
+    .chat{grid-template-columns:1fr}.chat-side{display:none}
+  }
+</style>
+
+<div class="app" id="app">
+  <header class="top">
+    <div class="brand"><span class="mark"></span>组合动力智能评估</div>
+    <div class="nl-wrap">
+      <label class="search"><span style="opacity:.7">🔎</span><input id="nl" placeholder='自然语言检索：例如"推力越界的算例有哪些"' autocomplete="off" /></label>
+      <div class="nl-panel" id="nl-panel">
+        <div id="nl-suggest">
+          <div class="nl-hd">试试这样问 · 支持按 单位/工况/物理量/判据/置信度 检索</div>
+          <button class="nl-ex">推力越界的算例有哪些</button>
+          <button class="nl-ex">哪家单位平均偏差最小</button>
+          <button class="nl-ex">六院和北航的 Ma6 交付</button>
+          <button class="nl-ex">还没对齐工况的算例</button>
+        </div>
+        <div id="nl-result" style="display:none">
+          <div class="nl-hd">已理解为结构化查询 <span>NL2Cypher</span></div>
+          <div class="nl-cond" id="nl-cond"></div>
+          <div class="nl-rows" id="nl-rows"></div>
+          <button class="btn primary sm" id="nl-open" style="width:100%;justify-content:center;margin-top:8px">在资源库查看结果 →</button>
+        </div>
+      </div>
+    </div>
+    <div class="top-right">
+      <select class="theme" id="theme" title="主题"><option value="dark">深空 deepspace</option><option value="light">简约 minimal</option></select>
+      <button class="ghost-btn" data-go="docs">📖 Docs</button>
+    </div>
+  </header>
+
+  <nav class="nav" id="nav">
+    <button class="item" data-go="ragflow"><span class="ic">🧠</span>RAGflow 对话</button>
+    <div class="group-label">评估工作台</div>
+    <button class="item" data-go="library"><span class="ic">📥</span>数据资源库<span class="badge-dot" title="1 项待人工对齐"></span></button>
+    <button class="item active" data-go="compare"><span class="ic">⚖️</span>对比评估<span class="tag">核心</span></button>
+    <button class="item" data-go="report"><span class="ic">📄</span>评估报告</button>
+    <div class="group-label">专项分析</div>
+    <button class="item" data-go="sim"><span class="ic">🔬</span>仿真分析</button>
+    <button class="item" data-go="exp"><span class="ic">📊</span>试验分析</button>
+    <div class="nav-spacer"></div>
+    <button class="item" data-go="config"><span class="ic">⚙️</span>配置</button>
+  </nav>
+
+  <main class="main" id="main">
+
+    <!-- ================= COMPARE ================= -->
+    <section class="screen on" data-screen="compare">
+      <div class="crumbs">评估工作台 / <b>对比评估</b></div>
+      <div class="page-head">
+        <div><h1>对比评估</h1><p class="sub">XF-2 双模态冲压发动机 · 直连试验多源比对 · 参照试车03实验真值</p></div>
+        <div class="spacer"></div>
+        <div class="seg" id="cmp-seg"><button class="on" data-view="l3">按工况对比</button><button data-view="l2">按算例对比</button><button data-view="l1">按单位对比</button></div>
+      </div>
+
+      <div class="ctxbar">
+        <span>📌</span><b>XF-2 双模态冲压</b><span class="sep">|</span>Ma 6.0 · 动压 60 kPa · 总温 1650 K<span class="sep">|</span>参照 <b>试车03</b><span class="sep">|</span>8 项 QOI · 3 家参评
+        <span class="spacer"></span><span style="color:var(--text-3);font-family:var(--mono);font-size:11.5px">EVAL-2026-0714-03</span>
+      </div>
+
+      <!-- L3 -->
+      <div data-cview="l3">
+        <div style="display:flex;align-items:center;gap:10px;margin:4px 0 9px"><div class="sect-label" style="margin:0">评估结论 · 单位排名</div><span class="spacer"></span><span class="chip">工况 <b>Ma6-60kPa</b> ▾</span><span class="chip">物理量 <b>8 项</b> ▾</span><button class="btn primary sm" data-go="report">生成评估报告 →</button></div>
+
+        <div class="tblwrap">
+          <table>
+            <thead><tr><th style="width:56px">排名</th><th>承研单位 · 算例</th><th>求解设置</th><th class="num">平均偏差</th><th class="num">QOI 达标</th><th class="num">综合评级</th></tr></thead>
+            <tbody>
+              <tr><td><span class="rkn first">1</span></td><td class="qty">西工大 · case4</td><td style="color:var(--text-2)">密度基 k-ω SST · 12.0M · y+35</td><td class="num" style="color:var(--good)">1.3%</td><td class="num">8 / 8</td><td class="num"><span class="grade a" style="font-size:16px">A−</span></td></tr>
+              <tr><td><span class="rkn">2</span></td><td class="qty">航天六院 · caseZ</td><td style="color:var(--text-2)">密度基 k-ε RLZ · 8.0M · y+55</td><td class="num" style="color:var(--good)">2.5%</td><td class="num">8 / 8</td><td class="num"><span class="grade b" style="font-size:16px">B+</span></td></tr>
+              <tr><td><span class="rkn">3</span></td><td class="qty">北航 · caseX</td><td style="color:var(--text-2)">压力基 k-ε · 6.4M · y+88</td><td class="num" style="color:var(--warn)">9.4%</td><td class="num" style="color:var(--warn)">6 / 8</td><td class="num"><span class="grade c" style="font-size:16px">B</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="sect-label">逐项物理量偏差 · 相对实验真值（<span style="color:var(--accent)">蓝色</span> = 该项最接近真值）</div>
+        <div class="tblwrap">
+          <table>
+            <thead><tr><th>物理量</th><th class="num">实验真值</th><th class="num">西工大</th><th class="num">航天六院</th><th class="num">北航</th><th>状态</th></tr></thead>
+            <tbody>
+              <tr class="stripe ok"><td class="qty">流道22 壁压峰值 <small style="color:var(--text-3)">MPa</small></td><td class="num">3.20</td><td class="num"><span class="cell-val lead">3.28</span><span class="cell-dev ok">+2.5%</span></td><td class="num"><span class="cell-val">3.31</span><span class="cell-dev hi">+3.4%</span></td><td class="num"><span class="cell-val">3.55</span><span class="cell-dev bad">+11%</span></td><td><span class="badge b-good">正常</span></td></tr>
+              <tr class="stripe ok"><td class="qty">流道24 壁压峰值 <small style="color:var(--text-3)">MPa</small></td><td class="num">3.48</td><td class="num"><span class="cell-val lead">3.52</span><span class="cell-dev ok">+1.1%</span></td><td class="num"><span class="cell-val">3.57</span><span class="cell-dev ok">+2.6%</span></td><td class="num"><span class="cell-val">3.86</span><span class="cell-dev bad">+11%</span></td><td><span class="badge b-good">正常</span></td></tr>
+              <tr class="stripe ok"><td class="qty">燃烧室压力 <small style="color:var(--text-3)">MPa</small></td><td class="num">2.10</td><td class="num"><span class="cell-val lead">2.13</span><span class="cell-dev ok">+1.4%</span></td><td class="num"><span class="cell-val">2.16</span><span class="cell-dev ok">+2.9%</span></td><td class="num"><span class="cell-val">2.31</span><span class="cell-dev bad">+10%</span></td><td><span class="badge b-good">正常</span></td></tr>
+              <tr class="stripe ok"><td class="qty">隔离段出口压比</td><td class="num">4.85</td><td class="num"><span class="cell-val lead">4.79</span><span class="cell-dev ok">−1.2%</span></td><td class="num"><span class="cell-val">4.71</span><span class="cell-dev ok">−2.9%</span></td><td class="num"><span class="cell-val">5.34</span><span class="cell-dev bad">+10%</span></td><td><span class="badge b-good">正常</span></td></tr>
+              <tr class="stripe warn"><td class="qty">推力 <small style="color:var(--text-3)">kN</small></td><td class="num">48.5</td><td class="num"><span class="cell-val lead">47.9</span><span class="cell-dev ok">−1.2%</span></td><td class="num"><span class="cell-val">47.2</span><span class="cell-dev ok">−2.7%</span></td><td class="num"><span class="cell-val">43.1</span><span class="cell-dev bad">−11%</span></td><td><span class="badge b-warn">北航越界</span></td></tr>
+              <tr class="stripe ok"><td class="qty">比冲 Isp <small style="color:var(--text-3)">s</small></td><td class="num">342</td><td class="num"><span class="cell-val lead">345</span><span class="cell-dev ok">+0.9%</span></td><td class="num"><span class="cell-val">338</span><span class="cell-dev ok">−1.2%</span></td><td class="num"><span class="cell-val">361</span><span class="cell-dev hi">+5.6%</span></td><td><span class="badge b-good">正常</span></td></tr>
+              <tr class="stripe warn"><td class="qty">燃烧效率 ηc</td><td class="num">0.965</td><td class="num"><span class="cell-val lead">0.958</span><span class="cell-dev ok">−0.7%</span></td><td class="num"><span class="cell-val">0.949</span><span class="cell-dev ok">−1.7%</span></td><td class="num"><span class="cell-val">0.910</span><span class="cell-dev hi">−5.7%</span></td><td><span class="badge b-warn">北航偏低</span></td></tr>
+              <tr class="stripe ok"><td class="qty">总压恢复系数 σ</td><td class="num">0.420</td><td class="num"><span class="cell-val lead">0.416</span><span class="cell-dev ok">−1.0%</span></td><td class="num"><span class="cell-val">0.408</span><span class="cell-dev ok">−2.9%</span></td><td class="num"><span class="cell-val">0.373</span><span class="cell-dev bad">−11%</span></td><td><span class="badge b-good">正常</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="sect-label">沿程壁面压力分布 · 四源叠加</div>
+        <div class="chartbox">
+          <div class="legend"><span><i class="dash" style="color:var(--text)"></i>实验真值</span><span><i style="background:var(--u1)"></i>西工大</span><span><i style="background:var(--u3)"></i>航天六院</span><span><i style="background:var(--u2)"></i>北航</span></div>
+          <svg viewBox="0 0 900 220" width="100%" height="200" preserveAspectRatio="none">
+            <line class="grid" x1="40" y1="25" x2="40" y2="195"/><line class="grid" x1="40" y1="195" x2="885" y2="195"/>
+            <line class="grid" x1="40" y1="110" x2="885" y2="110" stroke-dasharray="3 5" opacity=".4"/>
+            <line class="grid" x1="40" y1="67" x2="885" y2="67" stroke-dasharray="3 5" opacity=".4"/>
+            <line class="grid" x1="40" y1="153" x2="885" y2="153" stroke-dasharray="3 5" opacity=".4"/>
+            <text class="axis" x="6" y="70">3.5</text><text class="axis" x="6" y="113">2.8</text><text class="axis" x="6" y="157">2.1</text><text class="axis" x="6" y="198">1.4</text>
+            <text class="axis" x="44" y="210">入口</text><text class="axis" x="815" y="210">喷管出口</text>
+            <polyline fill="none" stroke="var(--text)" stroke-width="2" stroke-dasharray="6 5" points="55,165 180,140 320,80 460,62 600,60 720,88 860,150"/>
+            <polyline fill="none" stroke="var(--u1)" stroke-width="2" points="55,162 180,136 320,76 460,58 600,56 720,84 860,146"/>
+            <polyline fill="none" stroke="var(--u3)" stroke-width="1.8" opacity=".9" points="55,160 180,134 320,74 460,55 600,53 720,82 860,144"/>
+            <polyline fill="none" stroke="var(--u2)" stroke-width="1.8" opacity=".85" points="55,156 180,122 320,56 460,38 600,36 720,66 860,132"/>
+          </svg>
+          <p class="note" style="margin-top:4px">北航曲线整体偏高约 10%，峰值区偏差最大 —— 与"入口总压偏高"的推断一致。</p>
+        </div>
+
+        <div class="sect-label">AI 量化诊断 · 渊</div>
+        <div class="diag" style="margin-top:0">
+          <div class="hd"><span class="yuan">渊</span>专家结论 <span class="badge b-high" style="margin-left:auto"><span class="d"></span>置信度 HIGH</span></div>
+          <p><b style="color:var(--text)">西工大 case4</b>：8 项 QOI 偏差均 ≤2.5%（平均 1.3%），收敛充分（残差降 3.4 阶），网格 y+≈35，判定 <b style="color:var(--good)">可信 · 最优</b>。</p>
+          <p><b style="color:var(--text)">航天六院 caseZ</b>：8 项偏差 ≤3.4%（平均 2.5%），整体可信；k-ε RLZ + 8M/y+≈55，近壁略粗但不影响结论。</p>
+          <p><b style="color:var(--text)">北航 caseX</b>：壁压/室压/隔离段压比/总压恢复呈现<b>一致的 +10% 系统性偏差</b>，推力触发越界判据 <span class="cite" onclick="toast('判据 is_thrust_out_of_range · 引 Sutton《Rocket Propulsion Elements》')">is_thrust_out_of_range</span>，燃烧效率偏低 5.7% → 多量同向偏差强指向<b style="color:var(--text)">入口总压设定偏高</b>（约 +10%）。建议核对边界条件后重交付。</p>
+          <p><b style="color:var(--text)">结论</b>：本工况排序 <b style="color:var(--accent)">西工大 &gt; 航天六院 &gt; 北航</b>。</p>
+        </div>
+      </div>
+
+      <!-- L2 -->
+      <div data-cview="l2" style="display:none">
+        <div class="tblwrap">
+          <table>
+            <thead><tr><th>评估维度</th><th>西工大 case4</th><th>航天六院 caseZ</th><th>北航 caseX</th><th>结论</th></tr></thead>
+            <tbody>
+              <tr class="stripe ok"><td class="qty">收敛性</td><td><span class="badge b-good">✓ 3.4 阶</span></td><td><span class="badge b-good">✓ 3.2 阶</span></td><td><span class="badge b-good">✓ 3.1 阶</span></td><td class="winner">均收敛</td></tr>
+              <tr class="stripe ok"><td class="qty">网格质量</td><td class="num">12.0M · y+35 <span class="badge b-high">优</span></td><td class="num">8.0M · y+55 <span class="badge b-med">良</span></td><td class="num">6.4M · y+88 <span class="badge b-low">粗</span></td><td class="winner">西工大 <b>最优</b></td></tr>
+              <tr class="stripe warn"><td class="qty">QOI 合理性</td><td><span class="badge b-good">6/6 正常</span></td><td><span class="badge b-good">6/6 正常</span></td><td><span class="badge b-warn">4/6 · 2 异常</span></td><td class="winner">西工大 <b>最优</b></td></tr>
+              <tr class="stripe ok"><td class="qty">与实验平均偏差</td><td class="num" style="color:var(--good)">1.4%</td><td class="num" style="color:var(--good)">2.4%</td><td class="num" style="color:var(--warn)">7.9%</td><td class="winner">西工大 <b>最优</b></td></tr>
+              <tr class="stripe ok"><td class="qty">解析置信度</td><td><span class="badge b-high"><span class="d"></span>HIGH</span></td><td><span class="badge b-high"><span class="d"></span>HIGH</span></td><td><span class="badge b-med"><span class="d"></span>MED</span></td><td class="winner">—</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="note">点算例名 → 下钻「仿真分析 · 单算例」详情页。多算例并排对比亦见「仿真分析 · 多算例对比」。</p>
+      </div>
+
+      <!-- L1 -->
+      <div data-cview="l1" style="display:none">
+        <p class="sub" style="margin:0 0 14px">甲方汇报层 · 单位批次整体评级（由 L2/L3 加权聚合，权重可配置）</p>
+        <div class="tblwrap">
+          <table>
+            <thead><tr><th>批次</th><th>收敛性</th><th>网格质量</th><th>与实验吻合</th><th>QOI 通过率</th><th class="num">综合评级</th></tr></thead>
+            <tbody>
+              <tr class="stripe ok"><td class="qty">西工大 2026Q1</td><td><span class="dots"><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i></i></span></td><td><span class="dots"><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i></span></td><td class="num" style="color:var(--good)">2.1%</td><td class="num">100%</td><td class="num"><span class="grade a">A−</span></td></tr>
+              <tr class="stripe warn"><td class="qty">航天六院 2026Q1</td><td><span class="dots"><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i></i></span></td><td><span class="dots"><i class="f"></i><i class="f"></i><i class="f"></i><i></i><i></i></span></td><td class="num" style="color:var(--good)">3.1%</td><td class="num">100%</td><td class="num"><span class="grade b">B+</span></td></tr>
+              <tr class="stripe crit"><td class="qty">北航 2026Q1</td><td><span class="dots"><i class="f"></i><i class="f"></i><i class="f"></i><i></i><i></i></span></td><td><span class="dots"><i class="f"></i><i class="f"></i><i></i><i></i><i></i></span></td><td class="num" style="color:var(--warn)">9.8%</td><td class="num" style="color:var(--warn)">67%</td><td class="num"><span class="grade c">B</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="toolbar" style="margin-top:14px"><button class="btn sm" data-cview-go="l2">下钻到算例对比 →</button><button class="btn sm" data-cview-go="l3">下钻到工况对比 →</button><button class="btn primary sm" data-go="report">导出评级报告</button></div>
+      </div>
+    </section>
+
+    <!-- ================= LIBRARY ================= -->
+    <section class="screen" data-screen="library">
+      <div class="crumbs">评估工作台 / <b>数据资源库</b></div>
+      <div class="page-head"><div><h1>数据资源库</h1><p class="sub">批量入库 · 分层浏览（单位 ▸ 算例/车次 ▸ 工况）· 跨源勾选进对比</p></div></div>
+      <div class="stat-row">
+        <div class="stat"><div class="k">入库单位</div><div class="v">3 <small>家</small></div></div>
+        <div class="stat"><div class="k">算例/车次</div><div class="v">14 <small>个</small></div></div>
+        <div class="stat"><div class="k">工况点</div><div class="v">5 <small>个</small></div></div>
+        <div class="stat"><div class="k">待人工对齐</div><div class="v" style="color:var(--warn)">1</div></div>
+        <div class="stat"><div class="k">存储占用</div><div class="v">4.2<small> GB</small></div></div>
+      </div>
+      <div class="toolbar">
+        <button class="btn primary sm" onclick="toast('批量入库队列启动 · SHA-256 去重 · simparse 解析中（演示）')">＋ 批量入库</button>
+        <span class="chip">单位 ▾</span><span class="chip">类型 ▾</span><span class="chip">工况 ▾</span><span class="chip">置信度 ▾</span>
+        <div class="spacer"></div>
+        <button class="btn primary sm" id="go-compare" disabled>已选 <span id="seln">0</span> 项 → 去对比</button>
+      </div>
+      <div class="grid cols-lib">
+        <div class="card card-pad tree" id="lib-tree">
+          <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin-bottom:6px">按单位 / 批次浏览</div>
+          <div class="fil on u" data-filter="all"><span class="caret">▾</span>全部单位<span style="margin-left:auto;color:var(--text-3);font-size:11px;font-family:var(--mono)">5</span></div>
+          <div class="u fil" data-filter="西工大"><span class="caret">▾</span>西工大 <span class="badge b-high" style="margin-left:auto"><span class="d"></span>A−</span></div>
+          <div class="d" style="cursor:default"><span class="caret">▾</span>2026Q1 一轮交付 <span style="margin-left:auto;color:var(--text-3);font-size:11px;font-family:var(--mono)">2</span></div>
+          <div class="d" style="cursor:default"><span class="caret">▸</span>2025Q4 交付</div>
+          <div class="u fil" data-filter="航天六院" style="margin-top:6px"><span class="caret">▾</span>航天六院 <span class="badge b-med" style="margin-left:auto"><span class="d"></span>B+</span></div>
+          <div class="d" style="cursor:default"><span class="caret">▾</span>2026Q1 交付 <span style="margin-left:auto;color:var(--text-3);font-size:11px;font-family:var(--mono)">1</span></div>
+          <div class="u fil" data-filter="北航" style="margin-top:6px"><span class="caret">▾</span>北航 <span class="badge b-low" style="margin-left:auto"><span class="d"></span>B</span></div>
+          <div class="d" style="cursor:default"><span class="caret">▾</span>2026Q1 交付 <span style="margin-left:auto;color:var(--text-3);font-size:11px;font-family:var(--mono)">1</span></div>
+          <div class="u fil" data-filter="试车台" style="margin-top:6px"><span class="caret">▾</span>试车台（实验）<span class="badge b-high" style="margin-left:auto"><span class="d"></span>真值</span></div>
+        </div>
+        <div>
+          <div class="scopebar">当前范围：<b id="scope-name">全部单位</b><span style="color:var(--text-3)">·</span><span id="scope-count">5</span> 个对象<span class="spacer"></span><span style="color:var(--text-3);font-size:11.5px">👆 点击卡片查看数据 · 勾选加入对比</span></div>
+          <div class="grid" id="lib-cards" style="gap:11px">
+          <div class="dcard" data-item="case4" data-unit="西工大"><input type="checkbox" class="chk" /><div class="cardthumb jet-sym"></div><div class="body"><div class="row1"><span class="nm">case4</span><span class="kind">仿真 · fluent-hdf5</span><span class="badge b-high"><span class="d"></span>HIGH</span><span style="margin-left:auto;color:var(--text-3);font-size:12px;font-family:var(--mono)">西工大 · 2026Q1</span></div><div class="meta"><span>工况 <b>Ma6-60kPa</b></span><span>收敛 <b style="color:var(--good)">✓</b></span><span>网格 <b>12.0M</b></span><span>y+ <b>~35</b></span><span>QOI <b>6/6</b></span></div><div class="acts"><button class="mini dw-open">查看数据 →</button><button class="mini" data-go="report">报告</button></div></div></div>
+          <div class="dcard" data-item="caseZ" data-unit="航天六院"><input type="checkbox" class="chk" /><div class="cardthumb jet-xz"></div><div class="body"><div class="row1"><span class="nm">caseZ</span><span class="kind">仿真 · fluent-hdf5</span><span class="badge b-high"><span class="d"></span>HIGH</span><span style="margin-left:auto;color:var(--text-3);font-size:12px;font-family:var(--mono)">航天六院 · 2026Q1</span></div><div class="meta"><span>工况 <b>Ma6-60kPa</b></span><span>收敛 <b style="color:var(--good)">✓</b></span><span>网格 <b>8.0M</b></span><span>y+ <b>~55</b></span><span>QOI <b>6/6</b></span></div><div class="acts"><button class="mini dw-open">查看数据 →</button><button class="mini" data-go="report">报告</button></div></div></div>
+          <div class="dcard" data-item="trial03" data-unit="试车台"><input type="checkbox" class="chk" /><div class="cardthumb" style="background:var(--surface-2)"><svg width="48" height="30" viewBox="0 0 48 30"><polyline fill="none" stroke="var(--accent)" stroke-width="1.6" points="2,26 10,25 16,7 30,6 39,25 46,27"/></svg></div><div class="body"><div class="row1"><span class="nm">试车03</span><span class="kind">实验 · txt</span><span class="badge b-high"><span class="d"></span>真值参照</span><span style="margin-left:auto;color:var(--text-3);font-size:12px;font-family:var(--mono)">试车台</span></div><div class="meta"><span>工况 <b>Ma6-60kPa</b></span><span>通道 <b>28</b></span><span>时长 <b>18.4s</b></span><span>采样 <b>1kHz</b></span></div><div class="acts"><button class="mini dw-open">查看数据 →</button><button class="mini" data-go="report">报告</button></div></div></div>
+          <div class="dcard" data-item="caseX" data-unit="北航"><input type="checkbox" class="chk" /><div class="cardthumb jet-xy"></div><div class="body"><div class="row1"><span class="nm">caseX</span><span class="kind">仿真 · fluent-hdf5</span><span class="badge b-med"><span class="d"></span>MED</span><span style="margin-left:auto;color:var(--text-3);font-size:12px;font-family:var(--mono)">北航 · 2026Q1</span></div><div class="meta"><span>工况 <b>Ma6-60kPa</b></span><span>收敛 <b style="color:var(--good)">✓</b></span><span>网格 <b>6.4M</b></span><span>y+ <b>~88</b></span><span>QOI <b style="color:var(--warn)">4/6</b></span></div><div class="acts"><button class="mini dw-open">查看数据 →</button><button class="mini" data-go="report">报告</button></div></div></div>
+          <div class="dcard" data-item="case5" data-unit="西工大" style="opacity:.72"><input type="checkbox" class="chk" disabled /><div class="cardthumb jet-cross"></div><div class="body"><div class="row1"><span class="nm">case5</span><span class="kind">仿真 · fluent-hdf5</span><span class="badge b-pending"><span class="d"></span>PENDING</span><span style="margin-left:auto;color:var(--warn);font-size:12px">⚠ 工况待人工对齐</span></div><div class="meta"><span>工况 <b style="color:var(--warn)">未识别</b></span><span>收敛 <b style="color:var(--good)">✓</b></span><span>网格 <b>9.1M</b></span></div><div class="acts"><button class="mini" onclick="toast('打开人工对齐面板：为 case5 指定规范工况（演示）')">指定工况 →</button></div></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= SIM ================= -->
+    <section class="screen" data-screen="sim">
+      <div class="crumbs">专项分析 / <b>仿真分析</b></div>
+      <div class="page-head"><div><h1>仿真分析</h1><p class="sub">单个 CFD 算例的深度加工工作台 · 现有能力保留 + simparse 收敛/QOI 增强 · 去写死</p></div></div>
+      <div class="relbanner">
+        <span class="ic">🔗</span>
+        <div><b>与「对比评估」的关系</b>：仿真分析是<b>加工层</b>——把一个算例的原始 CFD 数据加工成结构化 <b>QOI + 收敛/网格质量 + 专家结论</b>；这些产出入库后，供 <b>对比评估</b>（评判层）按工况对齐、跨单位对实验真值评判打分。<span style="color:var(--text-3)">对比评估里 case4 的每个数，都来自在这里跑一遍。这里"理解一个算例"，对比评估"评判多家优劣"。</span></div>
+      </div>
+      <div class="subtabs" data-subs="sim"><button class="subtab on" data-sub="sim-single">单算例分析</button><button class="subtab" data-sub="sim-multi">网格无关性 / 技术自比</button></div>
+
+      <!-- single -->
+      <div class="subpane on" data-subpane="sim-single">
+        <div class="toolbar"><span class="chip">算例：<b>西工大 · case4</b> ▾</span><span class="chip">工况：<b>Ma6-60kPa</b></span><span class="badge b-high" style="padding:5px 9px"><span class="d"></span>解析置信度 HIGH</span><div class="spacer"></div><button class="btn sm" data-go="compare">在对比评估中查看本算例（排名 1）→</button></div>
+        <div class="stat-row">
+          <div class="stat"><div class="k">格式</div><div class="v" style="font-size:14px">fluent-hdf5</div></div>
+          <div class="stat"><div class="k">网格</div><div class="v">12.0<small>M</small></div></div>
+          <div class="stat"><div class="k">收敛</div><div class="v" style="color:var(--good);font-size:16px">✓ −3.4阶</div></div>
+          <div class="stat"><div class="k">y+ 均值</div><div class="v">34.8</div></div>
+          <div class="stat"><div class="k">QOI 通过</div><div class="v">6/6</div></div>
+        </div>
+        <div class="grid cols-sim" style="align-items:start">
+          <div class="card card-pad">
+            <div class="alist" data-alist="sim">
+              <div class="glabel">算例数据 · 后处理（现有能力）</div>
+              <div class="aitem on" data-apane="a-overview"><span class="ai">📋</span>概况</div>
+              <div class="aitem" data-apane="a-raw"><span class="ai">🗃️</span>原始数据 / 变量</div>
+              <div class="aitem" data-apane="a-cloud"><span class="ai">🧊</span>三维可视化</div>
+              <div class="aitem" data-apane="a-slice"><span class="ai">📈</span>沿程面平均</div>
+              <div class="aitem" data-apane="a-inlet"><span class="ai">🚪</span>入口参数</div>
+              <div class="aitem" data-apane="a-wall"><span class="ai">💪</span>壁面力</div>
+              <div class="aitem" data-apane="a-vlm"><span class="ai">👁️</span>VLM 云图分析</div>
+              <div class="glabel">质量评估 → 供对比评估</div>
+              <div class="aitem" data-apane="a-conv"><span class="ai">📉</span>收敛 / 残差<span class="st ok"></span></div>
+              <div class="aitem" data-apane="a-mesh"><span class="ai">🕸️</span>网格质量<span class="st ok"></span></div>
+              <div class="aitem" data-apane="a-qoi"><span class="ai">🎯</span>QOI 摘要<span class="st warn"></span></div>
+              <div class="aitem" data-apane="a-expert"><span class="ai">🧠</span>专家结论（渊）<span class="st ok"></span></div>
+            </div>
+          </div>
+          <div>
+            <div class="apane on" data-apane="a-overview">
+              <div class="card card-pad"><h3>算例概况 <span class="badge b-med" style="margin-left:auto"><span class="d"></span>simparse tier3</span></h3>
+                <div class="tblwrap" style="border:0;margin-top:8px"><table style="min-width:auto"><tbody>
+                  <tr><td class="qty">求解器</td><td>Fluent · 密度基 · 稳态</td></tr>
+                  <tr><td class="qty">湍流模型</td><td>k-ω SST</td></tr>
+                  <tr><td class="qty">燃料 / 氧化剂</td><td>煤油 / 富氧</td></tr>
+                  <tr><td class="qty">网格单元</td><td class="num">12,043,918</td></tr>
+                  <tr><td class="qty">边界 zone</td><td class="num">14（inlet ×2, wall ×9, outlet, symmetry）</td></tr>
+                  <tr><td class="qty">变量</td><td class="num">23</td></tr>
+                </tbody></table></div>
+              </div>
+            </div>
+            <div class="apane" data-apane="a-raw">
+              <div class="card card-pad"><h3>原始数据 / 变量 <span class="badge b-med" style="margin-left:auto"><span class="d"></span>simparse field_stats</span></h3>
+                <p class="muted" style="margin:3px 0 10px">HDF5 场本身是 12M 单元 × 23 变量的大数组；此处为变量清单与统计，可按 zone 导出原始场值。</p>
+                <div class="tblwrap"><table><thead><tr><th>变量</th><th>类型</th><th class="num">单位</th><th class="num">min</th><th class="num">max</th><th class="num">mean</th></tr></thead><tbody>
+                  <tr><td class="qty">Pressure</td><td>标量</td><td class="num">Pa</td><td class="num">4.2e4</td><td class="num">3.28e6</td><td class="num">1.90e6</td></tr>
+                  <tr><td class="qty">Temperature</td><td>标量</td><td class="num">K</td><td class="num">248</td><td class="num">2140</td><td class="num">1520</td></tr>
+                  <tr><td class="qty">Velocity</td><td>矢量</td><td class="num">m/s</td><td class="num">0</td><td class="num">2380</td><td class="num">1180</td></tr>
+                  <tr><td class="qty">Density</td><td>标量</td><td class="num">kg/m³</td><td class="num">0.08</td><td class="num">5.6</td><td class="num">1.42</td></tr>
+                  <tr><td class="qty">Mach Number</td><td>标量</td><td class="num">—</td><td class="num">0.02</td><td class="num">6.1</td><td class="num">2.8</td></tr>
+                  <tr><td class="qty" style="color:var(--text-3)">…共 23 变量</td><td colspan="5" style="color:var(--text-3)">含组分质量分数、湍动能 k、比耗散率 ω、壁面 y+ 等</td></tr>
+                </tbody></table></div>
+                <div class="toolbar" style="margin:10px 0 0"><span class="chip">zone：<b>combustor</b> ▾</span><button class="chip" onclick="toast('导出该 zone 原始场值 CSV（演示）')">⬇ 导出原始值</button><span style="font-size:11.5px;color:var(--text-3);align-self:center">压力单位为 Pa（原始）；1.90e6 Pa ≈ 室压 1.9 MPa</span></div>
+              </div>
+            </div>
+            <div class="apane" data-apane="a-conv">
+              <div class="chartbox"><div style="font-weight:600;font-size:13px;margin-bottom:8px">残差历史 <span class="badge b-good" style="margin-left:8px">✓ 已收敛</span></div>
+                <div class="legend"><span><i style="background:var(--u1)"></i>continuity</span><span><i style="background:var(--u2)"></i>x-momentum</span><span><i style="background:var(--u3)"></i>energy</span></div>
+                <svg viewBox="0 0 480 200" width="100%" height="190">
+                  <line class="grid" x1="40" y1="20" x2="40" y2="170"/><line class="grid" x1="40" y1="170" x2="465" y2="170"/>
+                  <text class="axis" x="10" y="24">1e0</text><text class="axis" x="6" y="97">1e-3</text><text class="axis" x="6" y="170">1e-6</text>
+                  <polyline fill="none" stroke="var(--u1)" stroke-width="1.6" points="45,40 120,70 200,95 280,120 360,140 460,148"/>
+                  <polyline fill="none" stroke="var(--u2)" stroke-width="1.6" points="45,45 120,78 200,102 280,128 360,146 460,152"/>
+                  <polyline fill="none" stroke="var(--u3)" stroke-width="1.6" points="45,50 120,85 200,112 280,135 360,150 460,156"/>
+                  <line class="grid" x1="40" y1="140" x2="465" y2="140" stroke-dasharray="3 4" opacity=".5"/><text class="axis" x="400" y="136" fill="var(--good)">收敛阈</text>
+                </svg>
+                <p class="note">continuity/momentum/energy 各降 3+ 阶，满足稳态收敛判据 is_steady_state_converged。</p>
+              </div>
+            </div>
+            <div class="apane" data-apane="a-mesh">
+              <div class="card card-pad"><h3>网格质量 <span class="badge b-high" style="margin-left:auto">优</span></h3>
+                <div class="stat-row" style="margin:10px 0 0"><div class="stat"><div class="k">单元数</div><div class="v">12.0<small>M</small></div></div><div class="stat"><div class="k">y+ 均值</div><div class="v">34.8</div></div><div class="stat"><div class="k">y+ 最大</div><div class="v">96</div></div><div class="stat"><div class="k">最差正交质量</div><div class="v">0.21</div></div></div>
+                <p class="note">y+ 落在壁面函数适用区（30–100），无明显畸形单元。</p>
+              </div>
+            </div>
+            <div class="apane" data-apane="a-qoi">
+              <div class="tblwrap"><table><thead><tr><th>QOI</th><th class="num">值</th><th>状态</th><th>判据 / 证据</th></tr></thead><tbody>
+                <tr class="stripe ok"><td class="qty">壁面压力峰值</td><td class="num">3.28 MPa</td><td><span class="badge b-good">正常</span></td><td class="muted" style="color:var(--text-2)">在 [0.001,10] 范围</td></tr>
+                <tr class="stripe ok"><td class="qty">推力</td><td class="num">47.9 kN</td><td><span class="badge b-good">正常</span></td><td class="muted" style="color:var(--text-2)"><span class="cite" onclick="toast('QOI thrust_integral · tier5')">thrust_integral</span></td></tr>
+                <tr class="stripe warn"><td class="qty">最大壁温</td><td class="num">2140 K</td><td><span class="badge b-warn">关注</span></td><td class="muted" style="color:var(--text-2)">接近材料上限，非异常</td></tr>
+              </tbody></table></div>
+            </div>
+            <div class="apane" data-apane="a-inlet"><div class="card card-pad"><h3>入口参数提取 <span class="badge b-med" style="margin-left:auto"><span class="d"></span>inlet_conditions</span></h3>
+              <p class="muted" style="margin:3px 0 10px">对名称含 inlet 的 zone 求面邻接单元均值 + 质量流量（Fluent 约定取负）</p>
+              <div class="tblwrap"><table><thead><tr><th>入口 zone</th><th class="num">总压 MPa</th><th class="num">总温 K</th><th class="num">马赫</th><th class="num">质量流量 kg/s</th></tr></thead><tbody>
+                <tr><td class="qty">air-inlet</td><td class="num">2.48</td><td class="num">1648</td><td class="num">5.98</td><td class="num">11.82</td></tr>
+                <tr><td class="qty">fuel-inlet</td><td class="num">3.10</td><td class="num">300</td><td class="num">0.32</td><td class="num">0.79</td></tr>
+              </tbody></table></div>
+              <p class="note">与实验来流条件（Ma6.0 / 总温1650K / 总压2.5MPa）吻合，入口设定正确。</p></div></div>
+            <div class="apane" data-apane="a-wall"><div class="card card-pad"><h3>壁面力积分 <span class="badge b-med" style="margin-left:auto"><span class="d"></span>wall_forces</span></h3>
+              <p class="muted" style="margin:3px 0 10px">对 type=wall 的 zone 积分压力力 + 黏性力（勾选合计）</p>
+              <div class="tblwrap"><table><thead><tr><th style="width:26px"></th><th>壁面 zone</th><th class="num">压力力 Fx (N)</th><th class="num">黏性力 Fx (N)</th><th class="num">合力 Fx (N)</th></tr></thead><tbody>
+                <tr><td><input type="checkbox" checked style="accent-color:var(--accent)"></td><td class="qty">combustor-wall</td><td class="num">38,420</td><td class="num">−1,240</td><td class="num">37,180</td></tr>
+                <tr><td><input type="checkbox" checked style="accent-color:var(--accent)"></td><td class="qty">isolator-wall</td><td class="num">9,610</td><td class="num">−890</td><td class="num">8,720</td></tr>
+                <tr><td><input type="checkbox" checked style="accent-color:var(--accent)"></td><td class="qty">nozzle-wall</td><td class="num">2,540</td><td class="num">−310</td><td class="num">2,230</td></tr>
+                <tr style="background:var(--surface-2)"><td></td><td class="qty">合计（3 项）</td><td class="num" style="color:var(--accent)">50,570</td><td class="num" style="color:var(--accent)">−2,440</td><td class="num" style="color:var(--accent);font-weight:700">48,130</td></tr>
+              </tbody></table></div>
+              <p class="note">合力 Fx ≈ 48.1 kN，与推力天平实测 48.5 kN 偏差 −0.8%。</p></div></div>
+            <div class="apane" data-apane="a-cloud"><div class="card card-pad"><h3>三维可视化 <span class="badge b-med" style="margin-left:auto"><span class="d"></span>PyVista → WebGL</span></h3>
+              <div class="toolbar" style="margin:8px 0 10px"><span class="chip">场：<b>压力</b> ▾</span><span class="chip">色标：<b>jet</b> ▾</span><span class="chip">范围：<b>自动</b> ▾</span><span class="spacer"></span><span style="font-size:11.5px;color:var(--text-3)">🖱 旋转 · 缩放 · 任意切片</span></div>
+              <div class="viz3d"><span class="lbl">燃烧室压力场 · 对称面 + 壁面着色（三维交互）</span><div class="viz-cbar"></div></div>
+              <div class="toolbar" style="margin:10px 0 0"><span class="chip" style="border-color:var(--accent);color:var(--accent)">对称面</span><span class="chip">任意切面</span><span class="chip">等值面</span><span class="chip">流线</span><span class="chip">壁面着色</span><span class="chip">网格</span></div>
+              <p class="note">大网格/大文件采用<b style="color:var(--text-2)">后端预处理 + WebGL 渐进加载（沙箱）</b>，替代前端直渲原始数据，解决卡顿（对应可视化提效目标）。</p>
+            </div></div>
+            <div class="apane" data-apane="a-slice"><div class="card card-pad"><h3>沿程面平均曲线</h3><div class="iframe-mock" style="margin-top:10px">［ 沿 X 面平均 P/T/Ma 曲线 ］</div><div class="toolbar" style="margin:12px 0 0"><span class="chip">切片数：<b>100</b></span><span class="chip">Y轴：压力 ▾</span></div></div></div>
+            <div class="apane" data-apane="a-vlm"><div class="card card-pad"><h3>VLM 云图分析</h3><div class="diag" style="margin-top:10px"><div class="hd"><span class="yuan">V</span>Qwen2.5-VL <span class="badge b-med" style="margin-left:auto"><span class="d"></span>MED</span></div><p style="margin:0">云图显示激波串位于隔离段中部，压升平稳无分离迹象；燃烧室压力分布对称，未见明显热斑。</p></div></div></div>
+            <div class="apane" data-apane="a-expert"><div class="diag" style="margin-top:0"><div class="hd"><span class="yuan">渊</span>专家结论 · 五段式 <span class="badge b-high" style="margin-left:auto"><span class="d"></span>HIGH</span></div><p><b style="color:var(--text)">概况</b>：k-ω SST 稳态，煤油/富氧。</p><p><b style="color:var(--text)">网格</b>：12M，y+≈35，适用壁面函数。</p><p><b style="color:var(--text)">收敛</b>：残差降 3.4 阶，满足 <span class="cite" onclick="toast('is_steady_state_converged · Patankar 1980')">收敛判据</span>。</p><p><b style="color:var(--text)">QOI</b>：6 项合理，与实验 ≤2.5%。</p><p style="margin:0"><b style="color:var(--text)">结论</b>：<b style="color:var(--good)">数据可信，本工况最优</b>。</p></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- multi: technical self-comparison, NOT cross-unit evaluation -->
+      <div class="subpane" data-subpane="sim-multi">
+        <div class="relbanner" style="background:var(--surface-2);border-left-color:var(--text-3)">
+          <span class="ic">🔬</span>
+          <div><b>技术性自比</b>：同一算例不同<b>网格 / 参数</b>的横向验证（网格无关性、湍流模型敏感性），用于判断"仿真本身收没收干净"。<b>不含实验真值、不评级</b>——跨单位对真值的正式评判请去 <span class="lnk" data-go="compare">对比评估</span>。</div>
+        </div>
+        <div class="toolbar"><span class="chip">对比类型：<b>网格无关性</b> ▾</span><span class="chip">基准算例：<b>西工大 case4</b></span><span class="chip">工况：<b>Ma6-60kPa</b></span><div class="spacer"></div><button class="btn sm" data-go="library">＋ 选算例版本</button></div>
+
+        <div class="sect-label">网格无关性验证 · case4 三套网格（粗 / 中 / 细）</div>
+        <div class="grid cols-2" style="grid-template-columns:1.1fr 1fr;align-items:start">
+          <div class="tblwrap"><table><thead><tr><th>指标</th><th class="num">粗网格</th><th class="num">中网格</th><th class="num">细网格</th></tr></thead><tbody>
+            <tr class="stripe ok"><td class="qty">网格量</td><td class="num">6.0M</td><td class="num">12.0M</td><td class="num">20.5M</td></tr>
+            <tr class="stripe ok"><td class="qty">y+ 均值</td><td class="num">68</td><td class="num">35</td><td class="num">22</td></tr>
+            <tr class="stripe ok"><td class="qty">壁压峰值 MPa</td><td class="num">3.19</td><td class="num">3.28</td><td class="num">3.30</td></tr>
+            <tr class="stripe ok"><td class="qty">推力 kN</td><td class="num">46.8</td><td class="num">47.9</td><td class="num">48.1</td></tr>
+            <tr class="stripe ok"><td class="qty">壁压 vs 细网格</td><td class="num" style="color:var(--warn)">−3.3%</td><td class="num" style="color:var(--good)">−0.6%</td><td class="num" style="color:var(--text-3)">基准</td></tr>
+          </tbody></table></div>
+          <div class="chartbox"><div style="font-weight:600;font-size:13px;margin-bottom:8px">壁压峰值随网格量收敛</div>
+            <svg viewBox="0 0 460 190" width="100%" height="185"><line class="grid" x1="44" y1="20" x2="44" y2="155"/><line class="grid" x1="44" y1="155" x2="450" y2="155"/>
+              <line class="grid" x1="44" y1="55" x2="450" y2="55" stroke-dasharray="3 5" opacity=".4"/>
+              <text class="axis" x="8" y="58">3.30</text><text class="axis" x="8" y="120">3.20</text>
+              <text class="axis" x="60" y="170">6M</text><text class="axis" x="230" y="170">12M</text><text class="axis" x="415" y="170">20M</text>
+              <polyline fill="none" stroke="var(--u1)" stroke-width="2" points="70,120 240,64 420,56"/>
+              <circle cx="70" cy="120" r="3.5" fill="var(--u1)"/><circle cx="240" cy="64" r="3.5" fill="var(--u1)"/><circle cx="420" cy="56" r="3.5" fill="var(--good)"/>
+              <text class="axis" x="250" y="52" fill="var(--good)">趋于平台</text>
+            </svg>
+          </div>
+        </div>
+        <div class="diag" style="margin-top:14px"><div class="hd"><span class="yuan">渊</span>网格无关性结论 <span class="badge b-high" style="margin-left:auto"><span class="d"></span>HIGH</span></div><p style="margin:0">中网格（12M）与细网格（20M）壁压峰值差 <b style="color:var(--good)">0.6%</b>、推力差 0.4%，关键量已趋于平台 → <b style="color:var(--good)">达到网格无关</b>，评估采用 12M 中网格即可，无需 20M。粗网格（6M）偏差 3.3% 偏大，不建议用于评估。</p></div>
+      </div>
+    </section>
+
+    <!-- ================= EXP ================= -->
+    <section class="screen" data-screen="exp">
+      <div class="crumbs">专项分析 / <b>试验分析</b></div>
+      <div class="page-head"><div><h1>试验分析</h1><p class="sub">热试车数据 · 可配置解析（分隔符/headerIndex/通道命名/单位修正读元数据）</p></div></div>
+      <div class="relbanner">
+        <span class="ic">🎯</span>
+        <div><b>与「对比评估」的关系</b>：试验分析产出的实测数据，是对比评估里各家仿真要对齐比对的 <b>实验真值参照</b>。<b>单车次</b>=分析并确认一次试车数据质量（能否当真值）；<b>多车次</b>=同工况重复性核查。质量确认后即作为 <span class="lnk" data-go="compare">对比评估</span> 的基准。</div>
+      </div>
+      <div class="subtabs" data-subs="exp"><button class="subtab on" data-sub="exp-single">单车次分析</button><button class="subtab" data-sub="exp-multi">多车次重复性</button></div>
+
+      <div class="subpane on" data-subpane="exp-single">
+        <div class="toolbar"><span class="chip">车次：<b>试车03</b> ▾</span><span class="chip">工况：<b>Ma6-60kPa</b></span><span class="badge b-high" style="padding:5px 9px"><span class="d"></span>解析置信度 HIGH</span><div class="spacer"></div><button class="btn primary sm" data-go="compare">→ 作为真值供对比评估</button></div>
+        <div class="stat-row"><div class="stat"><div class="k">通道数</div><div class="v">28</div></div><div class="stat"><div class="k">行数</div><div class="v">18,412</div></div><div class="stat"><div class="k">时长</div><div class="v">18.4<small>s</small></div></div><div class="stat"><div class="k">采样率</div><div class="v">1<small>kHz</small></div></div><div class="stat"><div class="k">稳态段</div><div class="v">12<small>s</small></div></div><div class="stat"><div class="k">异常</div><div class="v" style="color:var(--good)">0</div></div></div>
+        <div class="grid cols-sim" style="align-items:start">
+          <div class="card card-pad">
+            <div class="alist" data-alist="exp">
+              <div class="glabel">数据 · 时序</div>
+              <div class="aitem on" data-apane="ae-overview"><span class="ai">📋</span>概览与解析</div>
+              <div class="aitem" data-apane="ae-raw"><span class="ai">🗃️</span>原始数据</div>
+              <div class="aitem" data-apane="ae-curve"><span class="ai">📈</span>时序曲线</div>
+              <div class="aitem" data-apane="ae-stats"><span class="ai">📊</span>通道统计</div>
+              <div class="glabel">真值产出 → 供对比评估</div>
+              <div class="aitem" data-apane="ae-phase"><span class="ai">🕒</span>阶段分割</div>
+              <div class="aitem" data-apane="ae-qoi"><span class="ai">🎯</span>关键量提取</div>
+              <div class="aitem" data-apane="ae-anom"><span class="ai">⚠️</span>异常检测<span class="st ok"></span></div>
+              <div class="aitem" data-apane="ae-diag"><span class="ai">🧠</span>智能诊断（析）<span class="st ok"></span></div>
+              <div class="aitem" data-apane="ae-vlm"><span class="ai">👁️</span>VLM 图像分析</div>
+            </div>
+          </div>
+          <div>
+            <div class="apane on" data-apane="ae-overview">
+              <div class="card card-pad"><h3>概览与解析配置 <span class="badge b-med" style="margin-left:auto"><span class="d"></span>可配置 · 去写死</span></h3>
+                <div class="tblwrap" style="border:0;margin-top:8px"><table style="min-width:auto"><tbody>
+                  <tr><td class="qty">分隔符 / 编码</td><td>逗号 / UTF-8</td></tr>
+                  <tr><td class="qty">headerIndex</td><td class="num">10（第 11 行为列名）</td></tr>
+                  <tr><td class="qty">时间列</td><td>第 0 列 · Time (s)</td></tr>
+                  <tr><td class="qty">通道命名规则</td><td class="num">流道\d+ | 室压\d+ | 隔离段\d+ | 壁温\d+</td></tr>
+                  <tr><td class="qty">压力修正</td><td class="num">+0.101325 MPa（相对→绝对）</td></tr>
+                </tbody></table></div>
+                <div class="sect-label" style="margin:16px 0 8px">通道速查 · 28 通道分类</div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap"><span class="chip">流道压力 ×12</span><span class="chip">室压 ×3</span><span class="chip">隔离段 ×5</span><span class="chip">壁温 ×6</span><span class="chip">流量 ×2</span></div>
+              </div>
+            </div>
+            <div class="apane" data-apane="ae-raw">
+              <div class="card card-pad"><h3>原始数据 <span class="badge b-med" style="margin-left:auto"><span class="d"></span>试车03.txt</span></h3>
+                <div class="toolbar" style="margin:8px 0 10px"><span class="chip">行 <b>18,412</b></span><span class="chip">列 <b>29</b></span><span class="chip">UTF-8 · 逗号</span><span class="chip">1.9 MB</span><span class="spacer"></span><button class="chip" onclick="toast('导出原始 CSV（演示）')">⬇ 导出</button></div>
+                <details style="margin-bottom:10px"><summary style="cursor:pointer;color:var(--text-2);font-size:12.5px">文件头 · 前 10 行元信息（headerIndex=10，第 11 行为列名）</summary>
+                  <pre class="rawmeta">#试验编号: HW-2026-03      #日期: 2026-03-18
+#工况: Ma6.0 / 动压60kPa    #燃料: 煤油  #当量比: 0.80
+#来流总温: 1650K  #来流总压: 2.5MPa
+#采样率: 1000 Hz  #通道数: 28  #时长: 18.4 s
+#压力单位: MPa(相对)  #温度单位: K
+#传感器标定: 2026-03-10  #标定有效期: 90d
+#通道映射: 流道22-33→燃烧室  室压1-3→驻点  隔离段1-5
+#备注: 主级稳态段 4-16s
+#—— 以上为元信息，解析跳过 ——
+Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行 列名</pre>
+                </details>
+                <div class="tblwrap"><table class="rawtbl">
+                  <thead><tr><th>Time (s)</th><th>流道22</th><th>流道23</th><th>流道24</th><th>室压1</th><th>隔离段3</th><th>壁温3</th><th>…22 列</th></tr></thead>
+                  <tbody>
+                    <tr><td>8.000</td><td>3.091</td><td>3.028</td><td>3.381</td><td>1.871</td><td>1.203</td><td>1962</td><td>…</td></tr>
+                    <tr><td>8.001</td><td>3.094</td><td>3.031</td><td>3.379</td><td>1.873</td><td>1.201</td><td>1962</td><td>…</td></tr>
+                    <tr><td>8.002</td><td>3.089</td><td>3.026</td><td>3.383</td><td>1.870</td><td>1.205</td><td>1963</td><td>…</td></tr>
+                    <tr><td>8.003</td><td>3.096</td><td>3.033</td><td>3.377</td><td>1.874</td><td>1.199</td><td>1962</td><td>…</td></tr>
+                    <tr><td>8.004</td><td>3.088</td><td>3.024</td><td>3.385</td><td>1.869</td><td>1.207</td><td>1961</td><td>…</td></tr>
+                    <tr><td>8.005</td><td>3.092</td><td>3.029</td><td>3.380</td><td>1.872</td><td>1.202</td><td>1963</td><td>…</td></tr>
+                    <tr><td>8.006</td><td>3.095</td><td>3.032</td><td>3.378</td><td>1.875</td><td>1.200</td><td>1962</td><td>…</td></tr>
+                    <tr><td>8.007</td><td>3.090</td><td>3.027</td><td>3.382</td><td>1.871</td><td>1.204</td><td>1962</td><td>…</td></tr>
+                    <tr><td>8.008</td><td>3.093</td><td>3.030</td><td>3.379</td><td>1.873</td><td>1.201</td><td>1963</td><td>…</td></tr>
+                    <tr><td>8.009</td><td>3.087</td><td>3.025</td><td>3.384</td><td>1.868</td><td>1.206</td><td>1961</td><td>…</td></tr>
+                  </tbody>
+                </table></div>
+                <div class="pager"><button onclick="toast('首页')">⏮</button><button onclick="toast('上页')">◀</button><span>第 8,001–8,010 行 / 共 18,412（t 8.000–8.009s · 主级稳态段）</span><button onclick="toast('下页')">▶</button><span style="margin-left:8px">跳转行</span><input value="8001" onchange="toast('跳转到行 '+this.value)"></div>
+                <p class="note">这是原始采集值——<b style="color:var(--text-2)">相对压力，未加大气压修正</b>（分析时才 +0.101325 MPa）；壁温为 K，无修正。所见即文件本来的样子。</p>
+              </div>
+            </div>
+            <div class="apane" data-apane="ae-curve">
+              <div class="chartbox"><div style="font-weight:600;font-size:13px;margin-bottom:8px">时序压力曲线 <span class="badge b-med" style="margin-left:8px">Plotly · 2000点降采样</span></div>
+                <div class="toolbar" style="margin:0 0 8px"><span style="font-size:11.5px;color:var(--text-3);align-self:center">叠加：</span><span class="chip" style="border-color:var(--accent);color:var(--accent)">流道22 ×</span><span class="chip" style="border-color:var(--accent);color:var(--accent)">流道23 ×</span><span class="chip" style="border-color:var(--accent);color:var(--accent)">流道24 ×</span><span class="chip">＋ 通道</span><span class="spacer"></span><span class="chip">时间窗：<b>主级稳态</b> ▾</span></div>
+                <div class="legend"><span><i style="background:var(--u1)"></i>流道22</span><span><i style="background:var(--u2)"></i>流道23</span><span><i style="background:var(--u3)"></i>流道24</span><span><i style="background:var(--accent)" style="opacity:.25"></i>稳态取值区</span></div>
+                <svg viewBox="0 0 480 200" width="100%" height="190"><line class="grid" x1="40" y1="20" x2="40" y2="170"/><line class="grid" x1="40" y1="170" x2="465" y2="170"/>
+                  <rect x="131" y="20" width="257" height="150" fill="var(--accent)" opacity="0.07"/>
+                  <text class="axis" x="42" y="184">0s</text><text class="axis" x="240" y="184" fill="var(--accent)">主级稳态 4–16s</text><text class="axis" x="425" y="184">18.4s</text>
+                  <polyline fill="none" stroke="var(--u1)" stroke-width="1.7" points="45,155 90,150 130,60 200,52 300,50 380,56 420,150 460,158"/>
+                  <polyline fill="none" stroke="var(--u2)" stroke-width="1.7" opacity=".9" points="45,158 90,152 130,66 200,58 300,55 380,60 420,152 460,160"/>
+                  <polyline fill="none" stroke="var(--u3)" stroke-width="1.7" opacity=".85" points="45,160 90,155 130,72 200,64 300,60 380,66 420,155 460,162"/>
+                </svg>
+                <p class="note">压力已加大气压修正；可框选时间窗，关键量从主级稳态段（阴影区）提取。</p>
+              </div>
+            </div>
+            <div class="apane" data-apane="ae-stats">
+              <div class="card card-pad"><h3>通道统计 <span class="badge b-med" style="margin-left:auto"><span class="d"></span>stats/compute</span></h3>
+                <p class="muted" style="margin:3px 0 10px">各通道 min/max/mean/std（现有能力，压力已修正）</p>
+                <div class="tblwrap"><table><thead><tr><th>通道</th><th class="num">最小</th><th class="num">最大</th><th class="num">均值</th><th class="num">标准差</th><th>判定</th></tr></thead><tbody>
+                  <tr class="stripe ok"><td class="qty">流道22</td><td class="num">0.112</td><td class="num">3.204</td><td class="num">2.986</td><td class="num">0.318</td><td><span class="badge b-good">✓</span></td></tr>
+                  <tr class="stripe ok"><td class="qty">流道23</td><td class="num">0.110</td><td class="num">3.318</td><td class="num">3.041</td><td class="num">0.342</td><td><span class="badge b-good">✓</span></td></tr>
+                  <tr class="stripe ok"><td class="qty">流道24</td><td class="num">0.115</td><td class="num">3.482</td><td class="num">3.187</td><td class="num">0.351</td><td><span class="badge b-good">✓</span></td></tr>
+                  <tr class="stripe ok"><td class="qty">室压1</td><td class="num">0.108</td><td class="num">2.104</td><td class="num">1.972</td><td class="num">0.221</td><td><span class="badge b-good">✓</span></td></tr>
+                  <tr class="stripe ok"><td class="qty">壁温3</td><td class="num">312</td><td class="num">2148</td><td class="num">1965</td><td class="num">88</td><td><span class="badge b-good">✓</span></td></tr>
+                </tbody></table></div>
+              </div>
+            </div>
+            <div class="apane" data-apane="ae-phase">
+              <div class="card card-pad"><h3>阶段分割 <span class="badge b-med" style="margin-left:auto"><span class="d"></span>自动 + 可手调</span></h3>
+                <p class="muted" style="margin:3px 0 10px">按压力自动切分试车过程；关键量从<b style="color:var(--text)">主级稳态段</b>提取，避开点火/关车瞬态。</p>
+                <div class="phasebar"><div class="seg" style="flex:2.5">点火<span>0–2.5s</span></div><div class="seg" style="flex:1.5">建压<span>2.5–4s</span></div><div class="steady" style="flex:12">主级稳态 4–16s ★取值区</div><div class="seg" style="flex:2.4">关车<span>16–18.4s</span></div></div>
+                <p class="note">主级稳态段 12s，室压波动 &lt;1.5%，满足取稳态均值条件。分割点可手动拖拽调整。</p>
+              </div>
+            </div>
+            <div class="apane" data-apane="ae-qoi">
+              <div class="card card-pad"><h3>关键量提取 <span class="badge b-high" style="margin-left:auto"><span class="d"></span>→ Ma6-60kPa 实验真值</span></h3>
+                <p class="muted" style="margin:3px 0 10px">从主级稳态段提取，登记为对比评估的真值参照</p>
+                <div class="tblwrap"><table><thead><tr><th>物理量</th><th class="num">值</th><th>提取方式</th></tr></thead><tbody>
+                  <tr class="stripe ok"><td class="qty">燃烧室压力</td><td class="num">2.10 MPa</td><td style="color:var(--text-2)">稳态段均值</td></tr>
+                  <tr class="stripe ok"><td class="qty">流道22 壁压峰值</td><td class="num">3.20 MPa</td><td style="color:var(--text-2)">全程峰值</td></tr>
+                  <tr class="stripe ok"><td class="qty">流道24 壁压峰值</td><td class="num">3.48 MPa</td><td style="color:var(--text-2)">全程峰值</td></tr>
+                  <tr class="stripe ok"><td class="qty">推力</td><td class="num">48.5 kN</td><td style="color:var(--text-2)">推力天平稳态均值</td></tr>
+                  <tr class="stripe ok"><td class="qty">质量流量</td><td class="num">12.6 kg/s</td><td style="color:var(--text-2)">流量计均值</td></tr>
+                  <tr class="stripe ok"><td class="qty">比冲 Isp</td><td class="num">342 s</td><td style="color:var(--text-2)">推力 / 流量（派生）</td></tr>
+                </tbody></table></div>
+                <div class="relbanner" style="margin:12px 0 0"><span class="ic">🎯</span><div>这些量已登记为 <b>Ma6-60kPa 工况实验真值</b>，在 <span class="lnk" data-go="compare">对比评估</span> 中作为各家仿真的比对基准。</div></div>
+              </div>
+            </div>
+            <div class="apane" data-apane="ae-anom">
+              <div class="card card-pad"><h3>异常检测 <span class="badge b-good" style="margin-left:auto">0 异常 / 28 通道</span></h3>
+                <p class="muted" style="margin:3px 0 10px">判据引擎逐通道扫描（阈值读 sim-knowledge，非写死）</p>
+                <div class="tblwrap"><table><thead><tr><th>检测项</th><th>判据</th><th class="num">命中</th><th>状态</th></tr></thead><tbody>
+                  <tr class="stripe ok"><td class="qty">负压</td><td style="color:var(--text-2)">min &lt; 0（修正后不应为负）</td><td class="num">0</td><td><span class="badge b-good">通过</span></td></tr>
+                  <tr class="stripe ok"><td class="qty">超限</td><td style="color:var(--text-2)">max &gt; 10 MPa</td><td class="num">0</td><td><span class="badge b-good">通过</span></td></tr>
+                  <tr class="stripe ok"><td class="qty">波动异常</td><td style="color:var(--text-2)">std &gt; mean×2</td><td class="num">0</td><td><span class="badge b-good">通过</span></td></tr>
+                  <tr class="stripe ok"><td class="qty">断线 / 掉点</td><td style="color:var(--text-2)">连续 NaN / 定值</td><td class="num">0</td><td><span class="badge b-good">通过</span></td></tr>
+                  <tr class="stripe ok"><td class="qty">传感器漂移</td><td style="color:var(--text-2)">零点漂移检测</td><td class="num">0</td><td><span class="badge b-good">通过</span></td></tr>
+                </tbody></table></div>
+                <p class="note">原代码的"异常检测"按钮此前是占位（disabled），此处落地为判据引擎——前三条正是 llm_client 里那三条写死规则的升级版。</p>
+              </div>
+            </div>
+            <div class="apane" data-apane="ae-diag">
+              <div class="diag" style="margin-top:0"><div class="hd"><span class="yuan">析</span>智能诊断 <span class="badge b-high" style="margin-left:auto"><span class="d"></span>置信度 HIGH</span></div><p>28 通道均在正常范围（0.00001–10 MPa）；无负压、无剧烈波动（std/mean 均 &lt;2）；主级稳态段一致性好。</p><p style="margin:0"><b style="color:var(--text)">结论</b>：<b style="color:var(--good)">数据质量良好</b>，可作 Ma6-60kPa 工况真值参照。诊断阈值读判据库，非硬编码。</p></div>
+            </div>
+            <div class="apane" data-apane="ae-vlm">
+              <div class="card card-pad"><h3>VLM 图像分析 <span class="badge b-med" style="margin-left:auto"><span class="d"></span>多模态</span></h3>
+                <p class="muted" style="margin:3px 0 10px">对当前车次压力曲线图做视觉分析（图源=当前数据，非固定示例图）</p>
+                <div class="diag" style="margin:0"><div class="hd"><span class="yuan">V</span>Qwen2.5-VL <span class="badge b-med" style="margin-left:auto"><span class="d"></span>MED</span></div><p style="margin:0">曲线显示 2.5s 点火后压力快速建立，主级段（4–16s）压力平台稳定、三通道一致性好；关车段无异常回火尖峰。</p></div>
+                <div class="toolbar" style="margin:10px 0 0"><span class="chip">图源：当前压力曲线 ▾</span><button class="chip" onclick="toast('追问 VLM（演示）')">继续追问</button></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="subpane" data-subpane="exp-multi">
+        <div class="toolbar"><span class="chip">同工况车次：<b>试车03 · 07 · 09</b> ▾</span><span class="chip">工况：<b>Ma6-60kPa</b> · 已对齐</span><span class="chip" style="color:var(--text-3)">试车01(Ma6-50k) 按工况自动排除</span><div class="spacer"></div><button class="btn sm" data-go="library">＋ 从资源库选</button></div>
+        <div class="stat-row">
+          <div class="stat"><div class="k">参评车次</div><div class="v">3</div></div>
+          <div class="stat"><div class="k">同工况</div><div class="v" style="font-size:14px">Ma6-60kPa</div></div>
+          <div class="stat"><div class="k">平均 CV</div><div class="v" style="color:var(--warn)">2.3<small>%</small></div></div>
+          <div class="stat"><div class="k">离群车次</div><div class="v" style="color:var(--warn)">1</div></div>
+          <div class="stat"><div class="k">剔离群后 CV</div><div class="v" style="color:var(--good)">0.8<small>%</small></div></div>
+        </div>
+
+        <div class="sect-label">重复性统计 · 关键量（均值 ± σ · 变异系数 CV）</div>
+        <div class="tblwrap"><table>
+          <thead><tr><th>物理量</th><th class="num">试车03</th><th class="num">试车07</th><th class="num">试车09</th><th class="num">均值 ± σ</th><th class="num">CV</th><th>判定</th></tr></thead>
+          <tbody>
+            <tr class="stripe warn"><td class="qty">燃烧室压力 <small style="color:var(--text-3)">MPa</small></td><td class="num">2.10</td><td class="num" style="color:var(--warn)">2.23</td><td class="num">2.08</td><td class="num">2.14 ± 0.08</td><td class="num" style="color:var(--warn)">3.7%</td><td><span class="badge b-warn">07 偏高</span></td></tr>
+            <tr class="stripe warn"><td class="qty">流道24 壁压峰值 <small style="color:var(--text-3)">MPa</small></td><td class="num">3.48</td><td class="num" style="color:var(--warn)">3.61</td><td class="num">3.45</td><td class="num">3.51 ± 0.09</td><td class="num" style="color:var(--warn)">2.4%</td><td><span class="badge b-warn">07 偏高</span></td></tr>
+            <tr class="stripe warn"><td class="qty">推力 <small style="color:var(--text-3)">kN</small></td><td class="num">48.5</td><td class="num" style="color:var(--warn)">50.2</td><td class="num">48.1</td><td class="num">48.9 ± 1.1</td><td class="num" style="color:var(--warn)">2.3%</td><td><span class="badge b-warn">07 偏高</span></td></tr>
+            <tr class="stripe ok"><td class="qty">比冲 Isp <small style="color:var(--text-3)">s</small></td><td class="num">342</td><td class="num">345</td><td class="num">341</td><td class="num">342.7 ± 2.1</td><td class="num" style="color:var(--good)">0.6%</td><td><span class="badge b-good">一致</span></td></tr>
+            <tr class="stripe ok"><td class="qty">质量流量 <small style="color:var(--text-3)">kg/s</small></td><td class="num">12.6</td><td class="num">12.8</td><td class="num">12.5</td><td class="num">12.6 ± 0.15</td><td class="num" style="color:var(--good)">1.2%</td><td><span class="badge b-good">一致</span></td></tr>
+          </tbody>
+        </table></div>
+
+        <div class="grid cols-2" style="grid-template-columns:1fr 1fr;align-items:start;margin-top:14px">
+          <div>
+            <div class="sect-label">三车次室压曲线叠加</div>
+            <div class="chartbox">
+              <div class="legend"><span><i style="background:var(--u1)"></i>试车03</span><span><i style="background:var(--u3)"></i>试车09</span><span><i style="background:var(--u2)"></i>试车07（离群）</span></div>
+              <svg viewBox="0 0 480 185" width="100%" height="180"><line class="grid" x1="40" y1="20" x2="40" y2="155"/><line class="grid" x1="40" y1="155" x2="465" y2="155"/>
+                <text class="axis" x="42" y="170">0s</text><text class="axis" x="420" y="170">18.4s</text>
+                <polyline fill="none" stroke="var(--u2)" stroke-width="1.7" opacity=".9" points="45,145 120,50 240,46 360,48 460,145"/>
+                <polyline fill="none" stroke="var(--u1)" stroke-width="1.7" points="45,148 120,66 240,62 360,64 460,148"/>
+                <polyline fill="none" stroke="var(--u3)" stroke-width="1.7" stroke-dasharray="5 3" points="45,150 120,68 240,64 360,66 460,150"/>
+              </svg>
+              <p class="note">试车03 与 09 几乎重合；07 平台整体抬高约 6%。</p>
+            </div>
+          </div>
+          <div>
+            <div class="sect-label">各量重复性 CV（越短越稳）</div>
+            <div class="chartbox">
+              <svg viewBox="0 0 460 180" width="100%" height="175">
+                <line class="grid" x1="108" y1="14" x2="108" y2="168"/>
+                <line class="grid" x1="268" y1="14" x2="268" y2="168" stroke-dasharray="3 4" opacity=".55"/><text class="axis" x="248" y="12" fill="var(--warn)">CV 2%</text>
+                <text class="axis" x="6" y="34">比冲</text><rect x="108" y="24" width="48" height="15" rx="3" fill="var(--good)"/><text class="axis" x="162" y="35">0.6%</text>
+                <text class="axis" x="6" y="66">流量</text><rect x="108" y="56" width="96" height="15" rx="3" fill="var(--good)"/><text class="axis" x="210" y="67">1.2%</text>
+                <text class="axis" x="6" y="98">推力</text><rect x="108" y="88" width="184" height="15" rx="3" fill="var(--warn)"/><text class="axis" x="298" y="99">2.3%</text>
+                <text class="axis" x="6" y="130">壁压</text><rect x="108" y="120" width="192" height="15" rx="3" fill="var(--warn)"/><text class="axis" x="306" y="131">2.4%</text>
+                <text class="axis" x="6" y="162">室压</text><rect x="108" y="152" width="296" height="15" rx="3" fill="var(--warn)"/><text class="axis" x="410" y="163">3.7%</text>
+              </svg>
+              <p class="note">比冲/流量 CV&lt;2% 稳定；室压/壁压/推力 CV 偏大，主要由离群车次 07 贡献。</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="sect-label">离群诊断与真值影响</div>
+        <div class="diag" style="margin-top:0">
+          <div class="hd"><span class="yuan">析</span>重复性结论 <span class="badge b-high" style="margin-left:auto"><span class="d"></span>置信度 HIGH</span></div>
+          <p><b style="color:var(--text)">离群</b>：试车07 室压/壁压/推力系统性偏高约 6%，但比冲/流量正常 → 疑似当日<b style="color:var(--text)">来流总温偏高或压力传感器零点漂移</b>，非真实工况差异，建议复核当日试验记录。</p>
+          <p><b style="color:var(--text)">重复性</b>：剔除 07 后，试车03 与 09 各量 CV &lt; 1%，<b style="color:var(--good)">重复性良好</b>。</p>
+          <p style="margin:0"><b style="color:var(--text)">真值建议</b>：取 <b>试车03 与 09 均值</b>作为 Ma6-60kPa 实验真值（剔除离群 07），真值置信度 <b style="color:var(--good)">HIGH</b>。</p>
+        </div>
+        <div class="relbanner" style="margin-top:14px"><span class="ic">🎯</span><div><b>为什么要看重复性</b>：它直接决定<b>实验真值的置信度</b>——多车次一致→真值 HIGH；有离群→剔除或标注。确认后的真值供 <span class="lnk" data-go="compare">对比评估</span> 作各家仿真的比对基准。</div></div>
+      </div>
+    </section>
+
+    <!-- ================= REPORT ================= -->
+    <section class="screen" data-screen="report">
+      <div class="crumbs">评估工作台 / <b>评估报告</b></div>
+      <div class="page-head"><div><h1>评估报告</h1><p class="sub">AI 驱动生成 · 内容来自对比结果 + 判据命中 + 证据链 · 每条结论可追溯</p></div><div class="spacer"></div><button class="btn sm" onclick="toast('新建报告向导（演示）')">＋ 新建</button><button class="btn sm" onclick="toast('导出 PDF（演示）')">导出 PDF</button><button class="btn sm" onclick="toast('已追加到 RAGflow 知识库（演示）')">追加知识库</button></div>
+      <div style="display:flex;gap:16px;align-items:flex-start">
+        <div class="report-list">
+          <div class="rl-item on"><div class="t">Ma6-60kPa 多源评估</div><div class="m">2026-07-14 · 3 家</div></div>
+          <div class="rl-item"><div class="t">西工大 2026Q1 批次评级</div><div class="m">2026-07-12 · A−</div></div>
+          <div class="rl-item"><div class="t">北航 caseX 边界条件复核</div><div class="m">2026-07-10 · 待复交</div></div>
+          <div class="rl-item"><div class="t">试车重复性分析</div><div class="m">2026-07-08</div></div>
+        </div>
+        <div class="report">
+          <h2>Ma6-60kPa 工况 · 多源仿真数据评估报告</h2>
+          <div class="rmeta">生成 2026-07-14 · 参照 试车03（实验真值）· 对象 西工大 case4 / 航天六院 caseZ / 北航 caseX</div>
+          <h4>一、评估范围</h4><p>针对 Ma6-60kPa 工况，对三家仿真交付以试车03 实验数据为真值参照，比对 6 项关键 QOI 并评估收敛性与网格质量。</p>
+          <h4>二、各物理量偏差</h4><ul><li>壁面压力峰值：西工大 +2.5% / 六院 +3.4% / 北航 +11%</li><li>推力：西工大 −1.2% / 六院 −2.7% / 北航 −11%（越界）</li><li>燃烧效率：西工大 −0.7% / 六院 −1.7% / 北航 −5.7%（偏低）</li><li>其余（室压/比冲/质量流量）西工大与六院均 ≤3%，北航 5–10%</li></ul>
+          <h4>三、收敛与网格质量</h4><p>三算例均满足稳态收敛判据。网格：西工大 12M/y+35（优）、六院 8M/y+55（良）、北航 6.4M/y+88（偏粗）。</p>
+          <h4>四、专家结论（渊）</h4><p>西工大 case4 各项偏差 ≤2.5%，判定<b style="color:var(--good)">可信</b>；六院次之；北航存在 ~10% 系统性偏高，推力越界 <span class="cite" onclick="toast('is_thrust_out_of_range · Sutton')">［判据·文献］</span>，疑似入口总压设定偏差。</p>
+          <h4>五、评级与建议</h4><p>综合评级：<b style="color:var(--good)">西工大 A−</b> &gt; <b style="color:var(--warn)">航天六院 B+</b> &gt; <b style="color:var(--crit)">北航 B</b>。建议北航复核入口总压、加密近壁网格后重交付。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= RAGFLOW (chat) ================= -->
+    <section class="screen flex" data-screen="ragflow" style="height:100%">
+      <div class="chat">
+        <aside class="chat-side">
+          <div class="sh">
+            <button class="btn primary newconv" onclick="toast('新建对话（演示）')">＋ 新建对话</button>
+            <div class="kb-toggle" id="kb-toggle"><button class="on" data-kb="chat">💬 通用对话</button><button data-kb="kb">📚 知识库</button></div>
+          </div>
+          <div class="convs" id="conv-chat">
+            <div class="cl">今天</div>
+            <div class="conv on"><div class="t">Ma6 工况壁面压力偏差解读</div><div class="m">deepseek-v4-flash · 8 轮</div></div>
+            <div class="conv"><div class="t">北航 caseX 边界条件疑问</div><div class="m">deepseek-r1 · 3 轮</div></div>
+            <div class="cl">更早</div>
+            <div class="conv"><div class="t">组合动力评估标准咨询</div><div class="m">deepseek-v4-flash · 12 轮</div></div>
+            <div class="conv"><div class="t">比冲计算口径确认</div><div class="m">Qwen2.5-VL · 5 轮</div></div>
+          </div>
+        </aside>
+        <div class="chat-main">
+          <!-- chat mode -->
+          <div id="kb-pane-chat" style="display:flex;flex-direction:column;min-height:0;flex:1">
+            <div class="chat-bar">
+              <select class="model-pick" id="model"><optgroup label="本地 vLLM"><option value="Qwen2.5-VL-7B">🖼️ Qwen2.5-VL-7B（多模态·cuda:6,7）</option></optgroup><optgroup label="在线"><option value="deepseek-v4-flash" selected>⚡ deepseek-v4-flash</option><option value="deepseek-r1">🧠 deepseek-r1（推理）</option><option value="gpt-4o">gpt-4o</option></optgroup></select>
+              <span class="param">温度 <input type="range" min="0" max="1" step="0.1" value="0.3"><b style="font-family:var(--mono);color:var(--text)">0.3</b></span>
+              <div class="spacer"></div>
+              <button class="chip" onclick="toast('测试连接：deepseek-v4-flash 200 OK · 142ms（演示）')">⚡ 测试连接</button>
+            </div>
+            <div class="thread" id="thread">
+              <div class="msg u"><div class="av">你</div><div class="bubble"><p>Ma6-60kPa 工况下，北航仿真的壁面压力比实验高 10%，这个偏差正常吗？可能是什么原因？</p></div></div>
+              <div class="msg a"><div class="av">析</div><div class="bubble"><p>10% 的系统性偏高<b>超出常规工程可接受范围</b>（一般 &lt;5%），值得排查。结合当前评估数据，几个可能原因：</p><p>1. <b>入口边界条件</b>：入口总压/总温设定偏高会整体抬升压力场——这是最常见原因；<br>2. <b>湍流模型</b>：k-ε 在强激波/分离区易高估压升，建议核对是否用了 <code>k-ω SST</code>；<br>3. <b>网格</b>：北航 y+≈88 偏粗，近壁解析不足也会带来偏差。</p><p>对照西工大 case4（同工况偏差仅 +2.5%，y+≈35），<b>入口总压设定</b>嫌疑最大。建议优先核对。</p><div class="src">📎 依据：<b onclick="toast('跳转对比评估 L3')">对比评估 · Ma6-60kPa</b> · 判据 <b onclick="toast('is_thrust_out_of_range')">is_thrust_out_of_range</b></div></div></div>
+              <div class="msg u"><div class="av">你</div><div class="bubble"><p>那如果排除入口条件，湍流模型的影响能有多大？</p></div></div>
+              <div class="msg a"><div class="av">析</div><div class="bubble"><p class="typing"><i></i><i></i><i></i></p></div></div>
+            </div>
+            <div class="composer">
+              <div class="box"><textarea id="composer-in" rows="1" placeholder="输入问题…（Enter 发送，Shift+Enter 换行）"></textarea><div class="tools"><button class="icbtn" title="附件" onclick="toast('上传图片/数据附件（演示）')">📎</button><button class="send" id="send" title="发送">➤</button></div></div>
+              <div class="hint"><span>模型：deepseek-v4-flash</span><span>🔒 密钥脱敏</span><span>SSE 流式</span></div>
+            </div>
+          </div>
+          <!-- kb mode -->
+          <div id="kb-pane-kb" style="display:none;flex-direction:column;flex:1;min-height:0">
+            <div class="chat-bar"><span style="font-weight:600">📚 知识库</span><select class="model-pick" style="font-size:12.5px" onchange="toast('已切换知识库：'+this.value)"><option>组合动力评估标准库</option><option>历史评估报告库</option><option>领域文献库</option><option>使用文档</option></select><span class="chip" style="cursor:default">4 篇文档 · 128 段</span><div class="spacer"></div><button class="chip" id="kbm-open">⚙ 管理知识库</button></div>
+            <div class="thread" id="kb-thread">
+              <div class="msg u"><div class="av">你</div><div class="bubble"><p>Ma6 工况下壁面压力相对实验值偏差多少算合格？评估规范是怎么规定的？</p></div></div>
+              <div class="msg a"><div class="av">📚</div><div class="bubble">
+                <p>根据《组合动力仿真数据评估规范 v2.1》，Ma6 工况壁面压力偏差判定分级如下<sup class="cite-mark" onclick="toast('跳转来源 [1] 第 4.2 节')">[1]</sup>：</p>
+                <p>· 偏差 ≤ <code>3%</code> → <b>优秀</b><br>· <code>3%–5%</code> → <b>合格</b><br>· <code>5%–10%</code> → <b>需复核</b><br>· &gt; <code>10%</code> → <b>不合格</b>，触发边界条件核查<sup class="cite-mark" onclick="toast('跳转来源 [2] 第 3.1 节')">[2]</sup></p>
+                <p>偏差以主级稳态段实验真值为基准；若多车次重复性 <code>CV &gt; 5%</code>，真值置信度下调一档<sup class="cite-mark" onclick="toast('跳转来源 [1] 第 2.3 节')">[1]</sup>。</p>
+                <div class="src-block">
+                  <div class="src-hd">引用来源 · 2 篇（检索增强，可溯源）</div>
+                  <div class="src-item" onclick="toast('打开原文：评估规范 v2.1 第4.2节')"><span class="src-n">1</span><div><div class="src-t">组合动力仿真数据评估规范 v2.1</div><div class="src-m">第 4.2 节「壁面压力评级」· 相关度 0.92</div><div class="src-snip">"…以实验稳态值为基准，相对偏差≤5%判为合格，≤3%为优秀，超10%不合格并复核…"</div></div></div>
+                  <div class="src-item" onclick="toast('打开原文：热试车数据处理标准 第3.1节')"><span class="src-n">2</span><div><div class="src-t">热试车数据处理与判据标准</div><div class="src-m">第 3.1 节「边界条件核查」· 相关度 0.87</div><div class="src-snip">"…系统性偏差触发核查流程，优先复核入口总压与流量标定…"</div></div></div>
+                </div>
+              </div></div>
+              <div class="msg u"><div class="av">你</div><div class="bubble"><p>那北航 caseX 偏差 11%，按这个标准是什么结论？</p></div></div>
+              <div class="msg a"><div class="av">📚</div><div class="bubble">
+                <p>偏差 11% &gt; 10%，判为<b style="color:var(--crit)">不合格</b>，应触发边界条件核查<sup class="cite-mark" onclick="toast('跳转来源 [1]')">[1]</sup>。这与本次评估结论一致——北航 caseX 已标记推力越界、建议复核入口总压后重交付。</p>
+                <div class="src-block"><div class="src-hd">引用来源 · 1 篇</div>
+                  <div class="src-item" onclick="toast('打开原文')"><span class="src-n">1</span><div><div class="src-t">组合动力仿真数据评估规范 v2.1</div><div class="src-m">第 4.2 节 · 相关度 0.94</div></div></div>
+                </div>
+              </div></div>
+            </div>
+            <div class="composer">
+              <div class="box"><textarea id="kb-in" rows="1" placeholder="向「组合动力评估标准库」提问…（答案带原文出处）"></textarea><div class="tools"><button class="icbtn" title="上传文档入库" onclick="toast('上传文档入库（演示）')">＋</button><button class="send" id="kb-send" title="发送">➤</button></div></div>
+              <div class="hint"><span>当前库：组合动力评估标准库</span><span>🔒 答案带原文出处</span><span>RAGflow 检索增强</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= CONFIG ================= -->
+    <section class="screen" data-screen="config">
+      <div class="crumbs"><b>配置</b></div>
+      <div class="page-head"><div><h1>配置</h1><p class="sub">模型网关 + 判据/解析配置（把写死点变为可配置）</p></div></div>
+      <div class="grid cols-2" style="align-items:start">
+        <div class="card card-pad"><h3>模型配置 <button class="btn sm" style="margin-left:auto" onclick="toast('新增模型（演示）')">＋ 新增</button></h3>
+          <div class="tblwrap" style="margin-top:10px"><table style="min-width:auto"><thead><tr><th>模型</th><th>provider</th><th>密钥</th><th></th></tr></thead><tbody>
+            <tr><td class="qty">deepseek-v4-flash</td><td><span class="kind">online</span></td><td class="num">****</td><td><button class="mini" onclick="toast('测试 200 OK')">测试</button></td></tr>
+            <tr><td class="qty">Qwen2.5-VL-7B</td><td><span class="kind">local</span></td><td class="num">cuda:6,7</td><td><button class="mini" onclick="toast('测试 200 OK')">测试</button></td></tr>
+            <tr><td class="qty">deepseek-r1</td><td><span class="kind">online</span></td><td class="num">****</td><td><button class="mini" onclick="toast('测试 200 OK')">测试</button></td></tr>
+          </tbody></table></div>
+        </div>
+        <div class="card card-pad"><h3>解析与判据配置 <span class="tag" style="margin-left:auto">可配置</span></h3>
+          <p class="muted" style="margin:3px 0 0">把原先写死在代码里的参数（表头行、通道命名、大气压修正、判据阈值）搬到这里可改，改这些不用动代码。</p>
+          <div class="placeholder" style="margin-top:10px;font-size:12.5px;color:var(--text-2);line-height:2">
+            <div>试验解析 · 分隔符 <b style="color:var(--text);font-family:var(--mono)">逗号</b> · headerIndex <b style="color:var(--text);font-family:var(--mono)">10</b></div>
+            <div>通道正则 <b style="color:var(--text);font-family:var(--mono)">流道\d+ | 室压\d+ | 隔离段\d+</b></div>
+            <div>压力修正 <b style="color:var(--text);font-family:var(--mono)">+0.101325 MPa</b></div>
+            <div>物理常数 · γ <b style="color:var(--text);font-family:var(--mono)">1.4</b>（统一，修复原 1.3/1.4 冲突）</div>
+            <div>诊断判据 · 读 <b style="color:var(--accent)">sim-knowledge/criteria.yaml</b>（护城河）</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= DOCS ================= -->
+    <section class="screen" data-screen="docs">
+      <div class="crumbs">使用文档</div>
+      <div class="page-head"><div><h1>使用文档</h1><p class="sub">自助文档中心 · 升级自现有 docs.html（/help）</p></div><div class="spacer"></div><button class="btn sm" data-go="compare">← 返回平台</button></div>
+      <div class="grid cols-sim" style="align-items:start">
+        <div class="card card-pad">
+          <div class="alist" data-doclist>
+            <div class="glabel">上手</div>
+            <div class="aitem on" data-dpane="d-start"><span class="ai">🚀</span>快速上手<span class="dtag p1">阶段一</span></div>
+            <div class="aitem" data-dpane="d-spec"><span class="ai">📐</span>数据规范<span class="dtag p1">阶段一</span></div>
+            <div class="aitem" data-dpane="d-func"><span class="ai">🧩</span>功能说明<span class="dtag p1">阶段一</span></div>
+            <div class="glabel">进阶</div>
+            <div class="aitem" data-dpane="d-method"><span class="ai">⚖️</span>评估方法学<span class="dtag p2">阶段二</span></div>
+            <div class="aitem" data-dpane="d-glossary"><span class="ai">📖</span>术语表<span class="dtag p2">阶段二</span></div>
+            <div class="aitem" data-dpane="d-api"><span class="ai">🔧</span>API · 部署<span class="dtag p2">阶段二</span></div>
+          </div>
+        </div>
+        <div class="card card-pad doc-body">
+          <div class="dpane on" data-dpane="d-start">
+            <h4>快速上手</h4>
+            <p>平台的主动线是 <b style="color:var(--text)">入库 → 对比 → 报告</b>：</p>
+            <p>1. <b style="color:var(--text)">数据资源库</b> 批量入库各单位交付（仿真 HDF5 / 实验 TXT），系统自动解析、去重、对齐工况；<br>2. 勾选要评的对象 → <b style="color:var(--text)">对比评估</b>，按工况/算例/单位三个粒度看偏差与排名；<br>3. 一键 <b style="color:var(--text)">生成评估报告</b>，导出或追加到知识库。</p>
+            <p>需要深入一个算例时，去 <b style="color:var(--text)">仿真分析 / 试验分析</b>（加工层，产出对比评估用的 QOI 与真值）。</p>
+          </div>
+          <div class="dpane" data-dpane="d-spec">
+            <h4>数据规范（入库前必读）</h4>
+            <p><b style="color:var(--text)">实验数据 TXT</b>：逗号分隔、UTF-8；表头在第 <code>headerIndex</code> 行（默认 10，可在配置改）；第 0 列为 <code>Time (s)</code>；通道命名遵循 <code>流道\d+ / 室压\d+ / 隔离段\d+</code>（规则可配置）；压力如为相对值，入库时声明大气压修正。</p>
+            <p><b style="color:var(--text)">仿真数据 HDF5</b>：Fluent <code>*.cas.h5 + *.dat.h5</code> 成对提交；当前支持单网格 <code>meshes/1</code> 单相 <code>phase-1</code>；入口 zone 名含 <code>inlet</code>。</p>
+            <div class="warn-box">⚠️ <b>工况标识规范（多源对比的前提）</b>：每份交付必须提供工况标识——来流 <code>Ma / 动压 / 总温</code> 或统一工况编号。缺失或无法映射的，入库后标 <b>PENDING</b>，需人工在资源库指定工况才能进对比。这是"同一工况才能比"的地基。</div>
+          </div>
+          <div class="dpane" data-dpane="d-func"><h4>功能说明</h4><p>各模块（资源库 / 对比评估 / 仿真分析 / 试验分析 / 评估报告 / RAGflow / 配置）的详细用法。<span style="color:var(--text-3)">（阶段一补全）</span></p></div>
+          <div class="dpane" data-dpane="d-method">
+            <h4>评估方法学（评分如何得出 · 透明可追溯）</h4>
+            <p><b style="color:var(--text)">偏差</b>：各单位物理量相对实验真值的百分比偏差。</p>
+            <p><b style="color:var(--text)">判据</b>：读 <code>sim-knowledge/criteria.yaml</code>（护城河判据库，带文献引用），非写死阈值。如推力越界判据 <code>is_thrust_out_of_range</code>。</p>
+            <p><b style="color:var(--text)">置信度</b>：HIGH（判据/真值直接命中）· MED（规则推断）· LOW（弱证据）· PENDING（待人工）。</p>
+            <p><b style="color:var(--text)">评级</b>：由工况级（L3）偏差 + 算例级（L2）质量加权聚合到单位级（L1），权重方案可配置。</p>
+          </div>
+          <div class="dpane" data-dpane="d-glossary"><h4>术语表 · 名词与数据来源</h4>
+            <div class="tblwrap" style="border:0"><table style="min-width:auto"><thead><tr><th>名词</th><th>来源</th></tr></thead><tbody>
+              <tr><td class="qty">QOI</td><td>simparse 解析产出的关注量</td></tr>
+              <tr><td class="qty">判据 / criteria</td><td>sim-knowledge 判据库</td></tr>
+              <tr><td class="qty">置信度</td><td>SimGraph 四级机制</td></tr>
+              <tr><td class="qty">工况点对齐</td><td>评估元数据模型（心脏）</td></tr>
+              <tr><td class="qty">渊</td><td>CFD 专家 agent</td></tr>
+            </tbody></table></div>
+          </div>
+          <div class="dpane" data-dpane="d-api"><h4>API · 部署</h4><p>FastAPI 后端接口清单、SSE 流式约定、Nginx 不缓冲、GPU cuda:6,7、conda 环境。<span style="color:var(--text-3)">（阶段二补全）</span></p></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="foot"><span class="dot"></span><span>原型演示</span><span>GPU cuda:6,7</span><span>环境 gy_pytorch</span><span>FastAPI + HTML/JS</span><span style="margin-left:auto">对齐 docs/03-主界面信息架构.md</span></footer>
+</div>
+
+<div class="drawer-mask" id="drawer-mask"></div>
+<aside class="drawer" id="drawer">
+  <div class="drawer-hd">
+    <div><div class="drawer-title" id="dw-name">case4</div><div class="drawer-sub" id="dw-sub">仿真 · 西工大 · Ma6-60kPa · HIGH</div></div>
+    <div class="spacer"></div>
+    <button class="icbtn" id="dw-close">✕</button>
+  </div>
+  <div class="drawer-body">
+    <div id="dw-sim">
+      <div class="sect-label" style="margin-top:0">多方向切片缩略图 <span style="text-transform:none;letter-spacing:0;color:var(--text-3);font-weight:400">· 点击放大（对齐 SimGraph2：surface / xy / xz / yz）</span></div>
+      <div class="slices">
+        <div class="slice" onclick="toast('放大：表面着色 → 进入三维可视化')"><div class="img jet-sym"></div><div class="cap">表面 · 壁面压力<span>surface</span></div></div>
+        <div class="slice" onclick="toast('放大：XY 切面 z=0')"><div class="img jet-xy"></div><div class="cap">XY 切面 z=0 · 压力<span>xy</span></div></div>
+        <div class="slice" onclick="toast('放大：XZ 切面 y=0')"><div class="img jet-xz"></div><div class="cap">XZ 切面 y=0 · 马赫<span>xz</span></div></div>
+        <div class="slice" onclick="toast('放大：YZ 切面 x=200mm')"><div class="img jet-cross"></div><div class="cap">YZ 切面 x=200 · 温度<span>yz</span></div></div>
+      </div>
+      <div class="sect-label">概览</div>
+      <div class="tblwrap" style="border:0"><table style="min-width:auto"><tbody>
+        <tr><td class="qty">格式</td><td>fluent-hdf5（.cas.h5 + .dat.h5）</td></tr>
+        <tr><td class="qty">网格</td><td class="num">12.0M 单元 · 14 zone</td></tr>
+        <tr><td class="qty">变量</td><td class="num">23</td></tr>
+        <tr><td class="qty">收敛 / y+</td><td>✓ 残差 −3.4 阶 · y+≈35</td></tr>
+      </tbody></table></div>
+      <div class="sect-label">变量原始统计 · simparse field_stats</div>
+      <div class="tblwrap"><table><thead><tr><th>变量</th><th class="num">单位</th><th class="num">min</th><th class="num">max</th><th class="num">mean</th></tr></thead><tbody>
+        <tr><td class="qty">Pressure</td><td class="num">Pa</td><td class="num">4.2e4</td><td class="num">3.28e6</td><td class="num">1.90e6</td></tr>
+        <tr><td class="qty">Temperature</td><td class="num">K</td><td class="num">248</td><td class="num">2140</td><td class="num">1520</td></tr>
+        <tr><td class="qty">Velocity</td><td class="num">m/s</td><td class="num">0</td><td class="num">2380</td><td class="num">1180</td></tr>
+        <tr><td class="qty">Mach</td><td class="num">—</td><td class="num">0.02</td><td class="num">6.1</td><td class="num">2.8</td></tr>
+        <tr><td class="qty" style="color:var(--text-3)">…共 23 变量</td><td colspan="4" style="color:var(--text-3)">组分质量分数 / 湍动能 k / y+ 等</td></tr>
+      </tbody></table></div>
+      <p class="note">场云图、切片、流线见"进入完整分析 → 三维可视化"。</p>
+    </div>
+    <div id="dw-exp" style="display:none">
+      <div class="sect-label" style="margin-top:0">概览</div>
+      <div class="tblwrap" style="border:0"><table style="min-width:auto"><tbody>
+        <tr><td class="qty">格式</td><td>TXT · 逗号 · UTF-8 · Header@10</td></tr>
+        <tr><td class="qty">规模</td><td class="num">18,412 行 × 29 列 · 1kHz · 18.4s</td></tr>
+        <tr><td class="qty">通道</td><td>流道×12 · 室压×3 · 隔离段×5 · 壁温×6 · 流量×2</td></tr>
+      </tbody></table></div>
+      <div class="sect-label">原始数据预览 · 主级稳态段（未加大气压修正）</div>
+      <div class="tblwrap"><table class="rawtbl" style="min-width:520px"><thead><tr><th>Time(s)</th><th>流道22</th><th>流道23</th><th>流道24</th><th>室压1</th><th>…</th></tr></thead><tbody>
+        <tr><td>8.000</td><td>3.091</td><td>3.028</td><td>3.381</td><td>1.871</td><td>…</td></tr>
+        <tr><td>8.001</td><td>3.094</td><td>3.031</td><td>3.379</td><td>1.873</td><td>…</td></tr>
+        <tr><td>8.002</td><td>3.089</td><td>3.026</td><td>3.383</td><td>1.870</td><td>…</td></tr>
+        <tr><td>8.003</td><td>3.096</td><td>3.033</td><td>3.377</td><td>1.874</td><td>…</td></tr>
+        <tr><td>8.004</td><td>3.088</td><td>3.024</td><td>3.385</td><td>1.869</td><td>…</td></tr>
+      </tbody></table></div>
+      <p class="note">完整 18,412 行、时序曲线、阶段分割见"进入完整分析"。</p>
+    </div>
+  </div>
+  <div class="drawer-foot">
+    <button class="btn primary sm" id="dw-full">进入完整分析 →</button>
+    <button class="btn sm" id="dw-cmp" data-go="compare">加入对比</button>
+    <button class="btn sm" id="dw-rep" data-go="report">生成报告</button>
+    <div class="spacer"></div>
+    <button class="btn sm" id="dw-close2">关闭</button>
+  </div>
+</aside>
+
+<div class="modal-mask" id="kbm-mask"></div>
+<div class="modal" id="kbm">
+  <div class="modal-hd">📚 知识库管理<div class="spacer"></div><button class="icbtn" id="kbm-close">✕</button></div>
+  <div class="modal-body">
+    <div class="toolbar"><button class="btn primary sm" onclick="toast('新建知识库（演示）')">＋ 新建知识库</button><span class="spacer"></span><span class="chip" style="cursor:default">共 4 个库 · 60 篇文档</span></div>
+    <div class="tblwrap"><table><thead><tr><th>知识库</th><th class="num">文档</th><th class="num">段数</th><th class="num">更新</th><th>操作</th></tr></thead><tbody>
+      <tr class="stripe ok"><td class="qty">组合动力评估标准库</td><td class="num">4</td><td class="num">128</td><td class="num">07-12</td><td><button class="mini" onclick="toast('管理：组合动力评估标准库')">管理</button></td></tr>
+      <tr><td class="qty">历史评估报告库</td><td class="num">17</td><td class="num">542</td><td class="num">07-14</td><td><button class="mini" onclick="toast('管理：历史评估报告库')">管理</button></td></tr>
+      <tr><td class="qty">领域文献库</td><td class="num">33</td><td class="num">1,204</td><td class="num">06-30</td><td><button class="mini" onclick="toast('管理：领域文献库')">管理</button></td></tr>
+      <tr><td class="qty">使用文档</td><td class="num">6</td><td class="num">88</td><td class="num">07-10</td><td><button class="mini" onclick="toast('管理：使用文档')">管理</button></td></tr>
+    </tbody></table></div>
+    <div class="sect-label">「组合动力评估标准库」文档 · 4 篇</div>
+    <div class="tblwrap"><table><thead><tr><th>文档</th><th class="num">大小</th><th>状态</th><th></th></tr></thead><tbody>
+      <tr><td class="qty">组合动力仿真数据评估规范 v2.1.pdf</td><td class="num">2.3 MB</td><td><span class="badge b-good">已索引</span></td><td><button class="mini" onclick="toast('移除文档（演示）')">移除</button></td></tr>
+      <tr><td class="qty">热试车数据处理与判据标准.docx</td><td class="num">860 KB</td><td><span class="badge b-good">已索引</span></td><td><button class="mini" onclick="toast('移除文档（演示）')">移除</button></td></tr>
+      <tr><td class="qty">组合动力性能量定义.md</td><td class="num">42 KB</td><td><span class="badge b-good">已索引</span></td><td><button class="mini" onclick="toast('移除文档（演示）')">移除</button></td></tr>
+      <tr><td class="qty">评估流程 SOP.pdf</td><td class="num">1.1 MB</td><td><span class="badge b-low">索引中</span></td><td><button class="mini" onclick="toast('移除文档（演示）')">移除</button></td></tr>
+    </tbody></table></div>
+    <div class="placeholder" style="margin-top:12px;text-align:center;cursor:pointer" onclick="toast('上传文档到知识库 · 自动切段索引（演示）')">⬆ 拖入或点击上传文档（PDF / Word / Markdown）· 入库后自动切段索引</div>
+    <p class="note">评估报告在「评估报告」页可一键"追加到知识库"，自动进"历史评估报告库"。</p>
+  </div>
+</div>
+
+<div class="toast" id="toast"><span class="d"></span><span id="toast-msg"></span></div>
+
+<script>
+  const $=s=>document.querySelector(s), $$=s=>document.querySelectorAll(s);
+  function go(name){
+    $$('.screen').forEach(s=>s.classList.toggle('on', s.dataset.screen===name));
+    $$('.nav .item').forEach(b=>b.classList.toggle('active', b.dataset.go===name));
+    $('#main').scrollTop=0;
+  }
+  document.addEventListener('click', e=>{ const t=e.target.closest('[data-go]'); if(t) go(t.dataset.go); });
+
+  // compare view toggle
+  $('#cmp-seg').addEventListener('click', e=>{ const b=e.target.closest('button'); if(!b) return; $$('#cmp-seg button').forEach(x=>x.classList.toggle('on', x===b)); const v=b.dataset.view; $$('[data-cview]').forEach(el=>el.style.display = el.dataset.cview===v?'':'none'); });
+  $$('[data-cview-go]').forEach(b=>b.addEventListener('click',()=>{ const v=b.dataset.cviewGo; $$('#cmp-seg button').forEach(x=>x.classList.toggle('on', x.dataset.view===v)); $$('[data-cview]').forEach(el=>el.style.display = el.dataset.cview===v?'':'none'); }));
+
+  // subtabs (sim/exp)
+  $$('.subtabs').forEach(group=>{
+    group.addEventListener('click', e=>{ const b=e.target.closest('.subtab'); if(!b) return;
+      group.querySelectorAll('.subtab').forEach(x=>x.classList.toggle('on', x===b));
+      const scope=group.closest('.screen');
+      scope.querySelectorAll('.subpane').forEach(p=>p.classList.toggle('on', p.dataset.subpane===b.dataset.sub));
+    });
+  });
+
+  // analysis list (sim single)
+  $$('[data-alist]').forEach(list=>{
+    list.addEventListener('click', e=>{ const it=e.target.closest('.aitem'); if(!it) return;
+      list.querySelectorAll('.aitem').forEach(x=>x.classList.toggle('on', x===it));
+      const scope=it.closest('.subpane');
+      scope.querySelectorAll('.apane').forEach(p=>p.classList.toggle('on', p.dataset.apane===it.dataset.apane));
+    });
+  });
+
+  // library selection
+  function refreshSel(){ let n=0; $$('.dcard').forEach(c=>{ const chk=c.querySelector('.chk'); const on=chk.checked&&!chk.disabled; c.classList.toggle('sel',on); if(on)n++; }); $('#seln').textContent=n; $('#go-compare').disabled=n<2; }
+  $$('.dcard .chk').forEach(chk=>chk.addEventListener('change', refreshSel));
+  $('#go-compare').addEventListener('click', ()=>{ if(!$('#go-compare').disabled){ toast('已带 '+$('#seln').textContent+' 个对象进入对比'); go('compare'); }});
+
+  // data preview drawer
+  const drawer=$('#drawer'), drawerMask=$('#drawer-mask');
+  let dwTarget='sim';
+  function openDrawer(card){
+    const nm=card.querySelector('.nm'); if(!nm) return;
+    const name=nm.textContent.trim();
+    const unit=card.dataset.unit||'';
+    const kindEl=card.querySelector('.kind'); const isExp=kindEl&&/实验/.test(kindEl.textContent);
+    const opEl=card.querySelector('.meta b'); const op=opEl?opEl.textContent:'—';
+    const badge=card.querySelector('.badge'); const conf=badge?badge.textContent.trim():'';
+    $('#dw-name').textContent=name;
+    $('#dw-sub').textContent=(isExp?'实验':'仿真')+' · '+unit+' · 工况 '+op+' · '+conf;
+    $('#dw-sim').style.display=isExp?'none':'';
+    $('#dw-exp').style.display=isExp?'':'none';
+    dwTarget=isExp?'exp':'sim';
+    drawer.classList.add('show'); drawerMask.classList.add('show');
+  }
+  function closeDrawer(){ drawer.classList.remove('show'); drawerMask.classList.remove('show'); }
+  $('#dw-close').addEventListener('click', closeDrawer);
+  $('#dw-close2').addEventListener('click', closeDrawer);
+  drawerMask.addEventListener('click', closeDrawer);
+  $('#dw-full').addEventListener('click', ()=>{ closeDrawer(); go(dwTarget); });
+  $('#dw-cmp').addEventListener('click', closeDrawer);
+  $('#dw-rep').addEventListener('click', closeDrawer);
+  $$('.dcard').forEach(card=>card.addEventListener('click', e=>{ if(e.target.closest('input,button')) return; openDrawer(card); }));
+  $$('.dw-open').forEach(b=>b.addEventListener('click', e=>{ e.stopPropagation(); openDrawer(b.closest('.dcard')); }));
+  // knowledge-base management modal
+  const kbm=$('#kbm'), kbmMask=$('#kbm-mask');
+  function openKbm(){ kbm.classList.add('show'); kbmMask.classList.add('show'); }
+  function closeKbm(){ kbm.classList.remove('show'); kbmMask.classList.remove('show'); }
+  $('#kbm-open').addEventListener('click', openKbm);
+  $('#kbm-close').addEventListener('click', closeKbm);
+  kbmMask.addEventListener('click', closeKbm);
+
+  document.addEventListener('keydown', e=>{ if(e.key==='Escape'){ closeDrawer(); closeKbm(); } });
+
+  // library tree filter (left drives right)
+  const unitLabel={all:'全部单位','西工大':'西工大','航天六院':'航天六院','北航':'北航','试车台':'试车台（实验）'};
+  $('#lib-tree').addEventListener('click', e=>{ const f=e.target.closest('.fil'); if(!f) return;
+    $$('#lib-tree .fil').forEach(x=>x.classList.toggle('on', x===f));
+    const u=f.dataset.filter; let n=0;
+    $$('#lib-cards .dcard').forEach(c=>{ const show = u==='all'||c.dataset.unit===u; c.style.display=show?'':'none'; if(show)n++; });
+    $('#scope-name').textContent=unitLabel[u]; $('#scope-count').textContent=n;
+  });
+
+  // chat: kb toggle
+  $('#kb-toggle').addEventListener('click', e=>{ const b=e.target.closest('button'); if(!b) return; $$('#kb-toggle button').forEach(x=>x.classList.toggle('on',x===b)); const kb=b.dataset.kb; $('#kb-pane-chat').style.display = kb==='chat'?'flex':'none'; $('#kb-pane-kb').style.display = kb==='kb'?'flex':'none'; });
+  // chat: model select feedback
+  $('#model').addEventListener('change', e=>toast('已切换模型：'+e.target.value));
+  // chat: temperature label
+  document.querySelector('.param input').addEventListener('input', e=>{ e.target.nextElementSibling.textContent=(+e.target.value).toFixed(1); });
+  // chat: send (mock)
+  function sendMsg(){ const ta=$('#composer-in'); const v=ta.value.trim(); if(!v) return; const th=$('#thread');
+    const u=document.createElement('div'); u.className='msg u'; u.innerHTML='<div class="av">你</div><div class="bubble"><p></p></div>'; u.querySelector('p').textContent=v; th.appendChild(u);
+    const a=document.createElement('div'); a.className='msg a'; a.innerHTML='<div class="av">析</div><div class="bubble"><p class="typing"><i></i><i></i><i></i></p></div>'; th.appendChild(a);
+    ta.value=''; ta.style.height='auto'; th.scrollTop=th.scrollHeight;
+    setTimeout(()=>{ a.querySelector('.bubble').innerHTML='<p>（演示）已收到，正在按当前评估上下文流式作答…实际接入 SSE 后逐字返回。</p>'; th.scrollTop=th.scrollHeight; }, 900);
+  }
+  $('#send').addEventListener('click', sendMsg);
+  $('#composer-in').addEventListener('keydown', e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendMsg(); } });
+  $('#composer-in').addEventListener('input', e=>{ e.target.style.height='auto'; e.target.style.height=Math.min(e.target.scrollHeight,120)+'px'; });
+  // KB ask (with sources)
+  function kbAsk(){ const ta=$('#kb-in'); const v=ta.value.trim(); if(!v) return; const th=$('#kb-thread');
+    const u=document.createElement('div'); u.className='msg u'; u.innerHTML='<div class="av">你</div><div class="bubble"><p></p></div>'; u.querySelector('p').textContent=v; th.appendChild(u);
+    const a=document.createElement('div'); a.className='msg a'; a.innerHTML='<div class="av">📚</div><div class="bubble"><p class="typing"><i></i><i></i><i></i></p></div>'; th.appendChild(a);
+    ta.value=''; ta.style.height='auto'; th.scrollTop=th.scrollHeight;
+    setTimeout(()=>{ a.querySelector('.bubble').innerHTML='<p>（演示）已在「组合动力评估标准库」检索到相关条款并作答，答案附原文出处。</p><div class="src-block"><div class="src-hd">引用来源</div><div class="src-item"><span class="src-n">1</span><div><div class="src-t">组合动力仿真数据评估规范 v2.1</div><div class="src-m">相关段落 · 相关度 0.90</div></div></div></div>'; th.scrollTop=th.scrollHeight; }, 800);
+  }
+  $('#kb-send').addEventListener('click', kbAsk);
+  $('#kb-in').addEventListener('keydown', e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); kbAsk(); }});
+  $('#kb-in').addEventListener('input', e=>{ e.target.style.height='auto'; e.target.style.height=Math.min(e.target.scrollHeight,120)+'px'; });
+
+  // NL search panel
+  const nlPanel=$('#nl-panel'), nlInput=$('#nl');
+  const bmap={warn:'low',pending:'pending',good:'high','':'med'};
+  function nlReset(){ $('#nl-suggest').style.display=''; $('#nl-result').style.display='none'; }
+  nlInput.addEventListener('focus', ()=>{ nlReset(); nlPanel.classList.add('show'); });
+  function nlQuery(q){
+    q=(q||'').trim(); if(!q){ nlReset(); return; }
+    let cond, rows;
+    if(/越界|推力/.test(q)){ cond=[['判据','推力越界'],['来源','仿真']]; rows=[['caseX','北航','推力 43.1kN · −11%','warn']]; }
+    else if(/未对齐|对齐|pending|待/i.test(q)){ cond=[['状态','PENDING']]; rows=[['case5','西工大','工况未识别 · 待对齐','pending']]; }
+    else if(/偏差最小|最优|最准|哪家/.test(q)){ cond=[['聚合','平均偏差 升序'],['工况','Ma6-60kPa']]; rows=[['case4','西工大','平均偏差 1.3% · 第1','good'],['caseZ','航天六院','2.5% · 第2',''],['caseX','北航','9.4% · 第3','']]; }
+    else if(/六院|北航|ma6|工况|交付/i.test(q)){ cond=[['单位','六院/北航'],['工况','Ma6-60kPa']]; rows=[['caseZ','航天六院','置信度 HIGH',''],['caseX','北航','置信度 MED','']]; }
+    else { cond=[['关键词', q.slice(0,10)]]; rows=[['case4','西工大','Ma6-60kPa','']]; }
+    $('#nl-cond').innerHTML = cond.map(c=>'<span class="cc">'+c[0]+' <b>'+c[1]+'</b></span>').join('');
+    $('#nl-rows').innerHTML = rows.length ? rows.map(r=>'<div class="nr"><span class="badge b-'+bmap[r[3]||'']+'"><span class="d"></span></span><span class="nm">'+r[0]+'</span><span style="color:var(--text-3)">'+r[1]+'</span><span class="ds">'+r[2]+'</span></div>').join('') : '<div class="nl-empty">无匹配结果</div>';
+    $('#nl-suggest').style.display='none'; $('#nl-result').style.display=''; nlPanel.classList.add('show');
+  }
+  nlInput.addEventListener('keydown', e=>{ if(e.key==='Enter'){ nlQuery(e.target.value); }});
+  $$('.nl-ex').forEach(b=>b.addEventListener('click', ()=>{ nlInput.value=b.textContent; nlQuery(b.textContent); }));
+  $('#nl-open').addEventListener('click', ()=>{ nlPanel.classList.remove('show'); go('library'); });
+  $('#nl-rows').addEventListener('click', ()=>{ nlPanel.classList.remove('show'); go('library'); });
+  document.addEventListener('click', e=>{ if(!e.target.closest('.nl-wrap')) nlPanel.classList.remove('show'); });
+
+  // docs TOC
+  $$('[data-doclist]').forEach(list=>list.addEventListener('click', e=>{ const it=e.target.closest('.aitem'); if(!it) return; list.querySelectorAll('.aitem').forEach(x=>x.classList.toggle('on',x===it)); const scope=list.closest('[data-screen]'); scope.querySelectorAll('.dpane').forEach(p=>p.classList.toggle('on',p.dataset.dpane===it.dataset.dpane)); }));
+
+  // theme
+  const root=document.documentElement;
+  const initDark=!(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches);
+  root.setAttribute('data-theme', initDark?'dark':'light'); $('#theme').value=initDark?'dark':'light';
+  $('#theme').addEventListener('change', e=>root.setAttribute('data-theme', e.target.value));
+
+  // toast
+  let tmo; function toast(msg){ $('#toast-msg').textContent=msg; $('#toast').classList.add('show'); clearTimeout(tmo); tmo=setTimeout(()=>$('#toast').classList.remove('show'),2600); }
+  window.toast=toast;
+
+  // report list select
+  $$('.rl-item').forEach(it=>it.addEventListener('click',()=>{ $$('.rl-item').forEach(x=>x.classList.toggle('on',x===it)); }));
+</script>
+</body>
+</html>

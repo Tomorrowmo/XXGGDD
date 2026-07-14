@@ -21,8 +21,26 @@ from app.routers import diagnose as diagnose_router
 from app.routers import vlm as vlm_router
 from app.routers import ragflow as ragflow_router
 from app.routers import models_config as models_config_router
+# 重构新增（评估平台 v2）
+from app.routers import library as library_router
+from app.routers import compare as compare_router
+from app.routers import agent as agent_router
+from app.routers import report as report_router
+from app.routers import knowledge as knowledge_router
+from app.routers import search as search_router
+from app.routers import llm_config as llm_config_router
+from app.routers import chat_v2 as chat_v2_router
+from app.db import init_db
+from contextlib import asynccontextmanager
 
-app = FastAPI(title="组合动力智能评估", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()  # 启动时建评估元数据表（幂等）
+    yield
+
+
+app = FastAPI(title="组合动力智能评估", version="0.2.0", lifespan=lifespan)
 
 # 静态文件：前端页面、图片
 app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
@@ -36,6 +54,11 @@ if case_dir.is_dir():
     app.mount("/case_output", StaticFiles(directory=str(case_dir)), name="case_output")
 app.mount("/output_plots", StaticFiles(directory=str(output_dir)), name="output_plots")
 
+# 评估平台 v2：切片快照预览目录
+from app.settings import settings as _settings
+_settings.previews_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/previews", StaticFiles(directory=str(_settings.previews_dir)), name="previews")
+
 from app.core.qjz_fluent_post.http_api import create_fluent_router
 fluent_router = create_fluent_router(ROOT)
 app.include_router(fluent_router)
@@ -45,6 +68,15 @@ app.include_router(diagnose_router.router)
 app.include_router(vlm_router.router)
 app.include_router(ragflow_router.router)
 app.include_router(models_config_router.router)
+# 评估平台 v2 路由
+app.include_router(library_router.router)
+app.include_router(compare_router.router)
+app.include_router(agent_router.router)
+app.include_router(report_router.router)
+app.include_router(knowledge_router.router)
+app.include_router(search_router.router)
+app.include_router(llm_config_router.router)
+app.include_router(chat_v2_router.router)
 
 
 @app.get("/")
@@ -57,6 +89,12 @@ async def index():
 async def docs_page():
     """使用文档页面"""
     return FileResponse(ROOT / "static" / "docs.html")
+
+
+@app.get("/platform")
+async def platform_page():
+    """评估平台新界面（原型演进，接 v2 API）。"""
+    return FileResponse(ROOT / "docs" / "组合动力智能评估-原型.html")
 
 
 if __name__ == "__main__":
