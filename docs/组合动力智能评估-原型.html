@@ -1441,6 +1441,12 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
   async function getJSON(u){ try{ const r=await fetch(u,{cache:'no-store'}); return r.ok?await r.json():null; }catch(e){ return null; } }
   function gc(g){ return g&&g[0]==='A'?'a':(g&&g[0]==='B'?'b':'c'); }
   function confCls(c){ return {HIGH:'b-high',MED:'b-med',LOW:'b-low',PENDING:'b-pending'}[c]||'b-med'; }
+  // 网格单元自适应格式化（大算例 M、小算例 k / 原值），避免小网格显示成 0.0M
+  function fmtCells(n){ if(n==null||n===''||isNaN(n)) return '—'; n=+n;
+    if(n>=1e6) return (n/1e6).toFixed(n>=1e7?0:1)+'M';
+    if(n>=1e4) return (n/1e3).toFixed(0)+'k';
+    if(n>=1e3) return (n/1e3).toFixed(1)+'k';
+    return String(Math.round(n)); }
   // 轻量 Markdown → HTML（先转义防注入，再加粗/行内代码/列表/标题）
   function mdToHtml(t){
     t=(t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -1508,7 +1514,7 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
     wrap.innerHTML=d.cases.map(function(c){
       var kindTxt=c.kind==='experiment'?'实验 · txt':'仿真 · '+(c.source_format||'');
       var meta=['工况 <b>'+(c.operating_point||'—')+'</b>'];
-      if(c.context){ if(c.context.mesh_cells) meta.push('网格 <b>'+(c.context.mesh_cells/1e6).toFixed(1)+'M</b>');
+      if(c.context){ if(c.context.mesh_cells) meta.push('网格 <b>'+fmtCells(c.context.mesh_cells)+'</b>');
         if(c.context.y_plus) meta.push('y+ <b>~'+c.context.y_plus+'</b>');
         if(c.context.channels) meta.push('通道 <b>'+c.context.channels+'</b>'); }
       var goto=c.kind==='experiment'?'exp':'sim';
@@ -1631,7 +1637,7 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
     var ctx=d.context||{};
     var ov='<div class="sect-label">概览</div><div class="tblwrap" style="border:0"><table style="min-width:auto"><tbody>';
     ov+='<tr><td class="qty">格式</td><td>'+(d.source_format||'')+'</td></tr>';
-    if(ctx.mesh_cells) ov+='<tr><td class="qty">网格</td><td class="num">'+(ctx.mesh_cells/1e6).toFixed(1)+'M 单元'+(ctx.y_plus?(' · y+≈'+ctx.y_plus):'')+'</td></tr>';
+    if(ctx.mesh_cells) ov+='<tr><td class="qty">网格</td><td class="num">'+fmtCells(ctx.mesh_cells)+' 单元'+(ctx.y_plus?(' · y+≈'+ctx.y_plus):'')+'</td></tr>';
     if(ctx.channels) ov+='<tr><td class="qty">通道 / 行</td><td class="num">'+ctx.channels+' · '+(ctx.n_rows||'')+'</td></tr>';
     if(ctx.solver) ov+='<tr><td class="qty">求解器</td><td>'+ctx.solver+'</td></tr>';
     ov+='<tr><td class="qty">解析 / 对齐</td><td>'+d.parse_confidence+' · '+(d.mapping_confidence||'-')+'</td></tr></tbody></table></div>';
@@ -1850,7 +1856,7 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
     return '<div class="msel">'+list.map(function(c){
       var on=picked.indexOf(c.id)>=0?' checked':'';
       var sub=c.kind==='simulation'
-        ? (c.context&&c.context.mesh_cells?((c.context.mesh_cells/1e6).toFixed(1)+'M · y+'+(c.context.y_plus||'—')):(c.source_format||''))
+        ? (c.context&&c.context.mesh_cells?(fmtCells(c.context.mesh_cells)+' · y+'+(c.context.y_plus||'—')):(c.source_format||''))
         : ((c.context&&c.context.channels?c.context.channels+'通道':'')+' · 工况 '+(c.operating_point||'—'));
       return '<label class="mchip"><input type="checkbox" class="'+prefix+'-ck" value="'+c.id+'"'+on+'><b>'+c.name+'</b> <span style="color:var(--text-3)">'+c.unit+'</span> <span style="color:var(--text-3);font-size:11px">'+sub+'</span></label>';
     }).join('')+'</div>';
@@ -1878,7 +1884,7 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
       if(!d||!d.available){ out.innerHTML='<div class="placeholder">'+((d&&d.reason)||'对比失败')+'</div>'; return; }
       var cs=d.cases, refId=d.reference_id;
       var head='<div class="sect-label">参与算例（基准 = 网格最细者，标 ★）</div><div class="tblwrap"><table><thead><tr><th>算例</th><th>单位</th><th class="num">网格</th><th class="num">y+</th><th>求解器</th></tr></thead><tbody>'+
-        cs.map(function(c){var r=c.id===refId?' ★':''; return '<tr><td class="qty">'+c.name+r+'</td><td>'+c.unit+'</td><td class="num">'+(c.mesh_cells?(c.mesh_cells/1e6).toFixed(1)+'M':'—')+'</td><td class="num">'+(c.y_plus||'—')+'</td><td class="muted" style="color:var(--text-2)">'+(c.solver||'—')+'</td></tr>';}).join('')+'</tbody></table></div>';
+        cs.map(function(c){var r=c.id===refId?' ★':''; return '<tr><td class="qty">'+c.name+r+'</td><td>'+c.unit+'</td><td class="num">'+fmtCells(c.mesh_cells)+'</td><td class="num">'+(c.y_plus||'—')+'</td><td class="muted" style="color:var(--text-2)">'+(c.solver||'—')+'</td></tr>';}).join('')+'</tbody></table></div>';
       var th='<tr><th>QOI</th>'+cs.map(function(c){return '<th class="num">'+c.name+(c.id===refId?' ★':'')+'</th>';}).join('')+'</tr>';
       var body=d.rows.map(function(row){
         var tds=cs.map(function(c){ var v=row.values.filter(function(x){return x.case_id===c.id;})[0];
