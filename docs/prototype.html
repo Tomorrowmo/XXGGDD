@@ -1534,19 +1534,32 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
     markLive();
   }
 
-  async function liveReport(){
-    var rep=document.querySelector('[data-screen="report"] .report'); if(!rep) return;
-    var cases=((await getJSON(API+'/cases'))||{}).cases; if(cases===null) return;  // 无后端→mock
-    var ops=[]; (cases||[]).forEach(function(c){ if(c.operating_point && c.operating_point!=='__UNALIGNED__' && ops.indexOf(c.operating_point)<0) ops.push(c.operating_point); });
-    if(!ops.length){ rep.innerHTML='<h2>评估报告</h2><p class="muted" style="color:var(--text-2)">暂无可生成报告的工况。需入库并对齐到同一工况、且该工况下既有实验真值又有仿真交付。</p>'; markLive(); return; }
-    var d=await getJSON(API+'/report/'+encodeURIComponent(ops[0]));
-    if(!d||!d.ok){ rep.innerHTML='<h2>评估报告</h2><p class="muted" style="color:var(--text-2)">'+((d&&d.reason)||'暂无数据')+'</p>'; markLive(); return; }
+  function renderReportBody(rep,d){
     var s=d.sections;
-    rep.innerHTML='<h2>'+d.title+'</h2><div class="rmeta">实时生成（v2 API）· 参照 '+d.truth_source+'</div>'+
+    rep.innerHTML='<h2>'+d.title+'</h2><div class="rmeta">实时生成（v2 API）· 参照 '+d.truth_source+'（实验真值）</div>'+
       '<h4>一、评估范围</h4><p>'+s['评估范围']+'</p>'+
       '<h4>二、各物理量偏差</h4><ul>'+s['各物理量偏差'].map(function(x){return '<li>'+x+'</li>';}).join('')+'</ul>'+
       '<h4>三、专家结论（渊/析）</h4><ul>'+s['专家结论'].map(function(x){return '<li>'+x+'</li>';}).join('')+'</ul>'+
       '<h4>四、评级与建议</h4><p>'+s['评级与建议']+'</p>';
+  }
+  async function liveReport(){
+    var rep=document.querySelector('[data-screen="report"] .report'); if(!rep) return;
+    var listEl=document.querySelector('[data-screen="report"] .report-list');
+    var cases=((await getJSON(API+'/cases'))||{}).cases; if(cases===null) return;  // 无后端→mock
+    var ops=[]; (cases||[]).forEach(function(c){ if(c.operating_point && c.operating_point!=='__UNALIGNED__' && ops.indexOf(c.operating_point)<0) ops.push(c.operating_point); });
+    function emptyList(msg){ if(listEl) listEl.innerHTML='<div class="rl-item"><div class="t">暂无报告</div><div class="m">'+msg+'</div></div>'; }
+    if(!ops.length){ emptyList('需对齐工况'); rep.innerHTML='<h2>评估报告</h2><p class="muted" style="color:var(--text-2)">暂无可生成报告的工况。需入库并对齐到同一工况、且该工况下既有实验真值又有仿真交付。</p>'; markLive(); return; }
+    // 报告历史 = 各能出报告的工况（有实验真值 + 仿真源）；每条即一份可查看报告
+    var reports=[];
+    for(var i=0;i<ops.length;i++){ var rd=await getJSON(API+'/report/'+encodeURIComponent(ops[i])); if(rd&&rd.ok) reports.push({op:ops[i],data:rd}); }
+    if(!reports.length){ emptyList('工况缺真值或仿真源'); rep.innerHTML='<h2>评估报告</h2><p class="muted" style="color:var(--text-2)">已对齐工况下暂无同时具备实验真值与仿真源的组合，无法生成报告。</p>'; markLive(); return; }
+    function renderList(active){
+      if(!listEl) return;
+      listEl.innerHTML=reports.map(function(r){ var on=r.op===active?' on':''; var n=(r.data.ranking||[]).length;
+        return '<div class="rl-item'+on+'" data-op="'+r.op+'"><div class="t">'+r.op+' 多源评估</div><div class="m">'+n+' 家 · 参照 '+r.data.truth_source+'</div></div>'; }).join('');
+      listEl.querySelectorAll('.rl-item').forEach(function(el){ el.addEventListener('click', function(){ var op=el.getAttribute('data-op'); var r=reports.filter(function(x){return x.op===op;})[0]; if(r){ renderReportBody(rep,r.data); renderList(op); } }); });
+    }
+    renderList(reports[0].op); renderReportBody(rep,reports[0].data);
     markLive();
   }
 
