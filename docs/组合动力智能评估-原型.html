@@ -1770,7 +1770,68 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
     markLive();
   }
 
-  liveCompare(); liveCases(); liveUnits(); liveReport(); liveNL(); liveLLM(); liveChat();
+  // ---- 分析屏通用小工具 ----
+  function lineChart(curves,w,h){
+    if(!curves||!curves.length) return '';
+    var ally=[]; curves.forEach(function(c){ ally=ally.concat(c.y); });
+    var ymin=Math.min.apply(null,ally), ymax=Math.max.apply(null,ally);
+    var xs=curves[0].x, xmin=xs[0], xmax=xs[xs.length-1];
+    var cols=['var(--u1)','var(--u2)','var(--u3)','var(--accent)'];
+    function px(x){ return 40+(x-xmin)/((xmax-xmin)||1)*(w-50); }
+    function py(y){ return 15+(1-(y-ymin)/((ymax-ymin)||1))*(h-35); }
+    var polys=curves.map(function(c,i){ return '<polyline fill="none" stroke="'+cols[i%4]+'" stroke-width="1.5" points="'+c.x.map(function(x,j){return px(x).toFixed(1)+','+py(c.y[j]).toFixed(1);}).join(' ')+'"/>'; }).join('');
+    var lg=curves.map(function(c,i){return '<span><i style="background:'+cols[i%4]+'"></i>'+c.label+'</span>';}).join('');
+    return '<div class="legend">'+lg+'</div><svg viewBox="0 0 '+w+' '+h+'" width="100%" height="'+(h-8)+'"><line class="grid" x1="40" y1="15" x2="40" y2="'+(h-20)+'"/><line class="grid" x1="40" y1="'+(h-20)+'" x2="'+(w-10)+'" y2="'+(h-20)+'"/>'+polys+'</svg>';
+  }
+  function phaseBar(ph){
+    if(!ph) return '';
+    var segs=[['点火',ph.ignition],['建压',ph.buildup],['主级稳态',ph.steady],['关车',ph.shutdown]];
+    var total=(ph.shutdown[1]-ph.ignition[0])||1;
+    return '<div class="phasebar">'+segs.map(function(s,i){ var wd=(s[1][1]-s[1][0])/total*100; return '<div class="'+(i===2?'steady':'seg')+'" style="flex:'+Math.max(wd,3)+'">'+s[0]+'<span>'+s[1][0].toFixed(1)+'–'+s[1][1].toFixed(1)+'s</span></div>'; }).join('')+'</div>';
+  }
+
+  // ---- 试验分析·单车次：真实数据 ----
+  async function liveExp(){
+    var pane=document.querySelector('[data-subpane="exp-single"]'); if(!pane) return;
+    var cases=((await getJSON(API+'/cases'))||{}).cases; if(cases===null) return;
+    var exps=cases.filter(function(c){return c.kind==='experiment';});
+    if(!exps.length){ pane.innerHTML='<div class="placeholder" style="margin:6px 0">暂无试验车次。请在「数据资源库」入库真实试验 TXT/CSV。</div>'; return; }
+    function sel(cur){ var c=exps.filter(function(x){return x.id==cur;})[0]||{}; return '<div class="toolbar"><span class="chip">车次：<select id="exp-sel" class="model-pick" style="font-size:12.5px">'+exps.map(function(x){return '<option value="'+x.id+'"'+(x.id==cur?' selected':'')+'>'+x.name+' · '+x.unit+'</option>';}).join('')+'</select></span><span class="chip">工况 <b>'+(c.operating_point||'—')+'</b></span></div>'; }
+    async function load(cid){
+      var d=await getJSON(API+'/cases/'+cid+'/experiment'); var html=sel(cid);
+      if(!d||!d.available){ pane.innerHTML=html+'<div class="placeholder" style="margin-top:12px">'+((d&&d.reason)||'无数据')+'</div>'; bind(); return; }
+      html+='<div class="stat-row"><div class="stat"><div class="k">通道</div><div class="v">'+d.n_channels+'</div></div><div class="stat"><div class="k">行数</div><div class="v">'+d.n_rows.toLocaleString()+'</div></div><div class="stat"><div class="k">稳态段</div><div class="v">'+((d.phases.steady[1]-d.phases.steady[0])).toFixed(1)+'<small>s</small></div></div><div class="stat"><div class="k">异常</div><div class="v" style="color:'+(d.anomalies.length?'var(--warn)':'var(--good)')+'">'+d.anomalies.length+'</div></div></div>';
+      html+='<div class="sect-label">时序曲线（真实数据）</div><div class="chartbox">'+lineChart(d.curves,480,200)+'</div>';
+      html+='<div class="sect-label">阶段分割</div><div class="card card-pad">'+phaseBar(d.phases)+'<p class="note">关键量从主级稳态段提取。</p></div>';
+      html+='<div class="sect-label">通道统计</div><div class="tblwrap"><table><thead><tr><th>通道</th><th class="num">最小</th><th class="num">最大</th><th class="num">均值</th><th class="num">标准差</th></tr></thead><tbody>'+d.stats.slice(0,10).map(function(s){return '<tr><td class="qty">'+s.label+'</td><td class="num">'+s.min+'</td><td class="num">'+s.max+'</td><td class="num">'+s.mean+'</td><td class="num">'+s.std+'</td></tr>';}).join('')+'</tbody></table></div>';
+      html+='<div class="sect-label">稳态关键量 → 真值</div><div class="tblwrap"><table><thead><tr><th>物理量</th><th class="num">值</th><th class="num">单位</th><th>提取</th></tr></thead><tbody>'+d.steady_qoi.slice(0,10).map(function(q){return '<tr><td class="qty">'+q.quantity+'</td><td class="num">'+q.value+'</td><td class="num">'+q.unit+'</td><td class="muted" style="color:var(--text-2)">'+q.method+'</td></tr>';}).join('')+'</tbody></table></div>';
+      pane.innerHTML=html; bind();
+    }
+    function bind(){ var s=document.getElementById('exp-sel'); if(s) s.addEventListener('change', function(){ load(s.value); }); }
+    load(exps[0].id);
+  }
+
+  // ---- 仿真分析·单算例：真实数据 ----
+  async function liveSim(){
+    var pane=document.querySelector('[data-subpane="sim-single"]'); if(!pane) return;
+    var cases=((await getJSON(API+'/cases'))||{}).cases; if(cases===null) return;
+    var sims=cases.filter(function(c){return c.kind==='simulation';});
+    if(!sims.length){ pane.innerHTML='<div class="placeholder" style="margin:6px 0">暂无仿真算例。请入库 OpenFOAM 目录 / Fluent HDF5。</div>'; return; }
+    function sel(cur){ var c=sims.filter(function(x){return x.id==cur;})[0]||{}; return '<div class="toolbar"><span class="chip">算例：<select id="sim-sel" class="model-pick" style="font-size:12.5px">'+sims.map(function(x){return '<option value="'+x.id+'"'+(x.id==cur?' selected':'')+'>'+x.name+' · '+x.unit+'</option>';}).join('')+'</select></span><span class="chip">工况 <b>'+(c.operating_point||'—')+'</b></span></div>'; }
+    async function load(cid){
+      var d=await getJSON(API+'/cases/'+cid+'/simulation'); var html=sel(cid);
+      if(!d||!d.available){ pane.innerHTML=html+'<div class="placeholder" style="margin-top:12px">'+((d&&d.reason)||'无数据')+'</div>'; bind(); return; }
+      if(d.preview_urls&&Object.keys(d.preview_urls).length){ html+='<div class="sect-label">多方向切片（真实渲染）</div><div class="slices">'+Object.keys(d.preview_urls).map(function(k){return '<div class="slice"><img src="'+d.preview_urls[k]+'" style="width:100%;height:86px;object-fit:cover;display:block"><div class="cap">'+k+'</div></div>';}).join('')+'</div>'; }
+      var convHit=(d.convergence||[]).filter(function(x){return x.value!==null&&x.value!==undefined;});
+      html+='<div class="sect-label">收敛判据（simparse × sim-knowledge）</div><div class="tblwrap"><table><thead><tr><th>判据量</th><th class="num">值</th><th>置信</th></tr></thead><tbody>'+convHit.slice(0,8).map(function(x){return '<tr><td class="qty">'+x.variable+'</td><td class="num">'+(typeof x.value==='number'?Math.round(x.value*1000)/1000:x.value)+'</td><td><span class="badge '+confCls(x.confidence)+'"><span class="d"></span>'+(x.confidence||'')+'</span></td></tr>';}).join('')+'</tbody></table></div>';
+      html+='<div class="sect-label">QOI（真实解析 · 前 14）</div><div class="tblwrap"><table><thead><tr><th>物理量</th><th class="num">值</th><th class="num">单位</th><th>置信</th></tr></thead><tbody>'+(d.qoi||[]).slice(0,14).map(function(q){return '<tr><td class="qty">'+q.variable+'</td><td class="num">'+(typeof q.value==='number'?Math.round(q.value*1000)/1000:q.value)+'</td><td class="num">'+(q.unit||'')+'</td><td><span class="badge '+confCls(q.confidence)+'"><span class="d"></span>'+(q.confidence||'')+'</span></td></tr>';}).join('')+'</tbody></table></div>';
+      pane.innerHTML=html; bind();
+    }
+    function bind(){ var s=document.getElementById('sim-sel'); if(s) s.addEventListener('change', function(){ load(s.value); }); }
+    load(sims[0].id);
+  }
+
+  liveCompare(); liveCases(); liveUnits(); liveReport(); liveNL(); liveLLM(); liveChat(); liveExp(); liveSim();
 })();
 </script>
 </body>

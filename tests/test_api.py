@@ -131,6 +131,26 @@ def test_report_export(client):
     assert "评级与建议" in r.text
 
 
+def test_experiment_analysis(client, exp_file):
+    r = client.post("/api/v2/ingest/file",
+                    json={"path": exp_file, "unit_name": "试车台", "delivery_label": "Q1"})
+    cid = r.json()["case_id"]
+    d = client.get(f"/api/v2/cases/{cid}/experiment").json()
+    assert d["available"]
+    assert d["n_channels"] >= 3
+    assert d["curves"] and d["steady_qoi"]
+    assert "steady" in d["phases"]
+
+
+def test_experiment_analysis_seed_no_file(client):
+    client.post("/api/v2/seed")
+    # 种子试车03 无真实文件 → available False
+    cases = client.get("/api/v2/cases?kind=experiment").json()["cases"]
+    cid = cases[0]["id"]
+    d = client.get(f"/api/v2/cases/{cid}/experiment").json()
+    assert d["available"] is False
+
+
 def test_platform_page(client):
     r = client.get("/platform")
     assert r.status_code == 200
