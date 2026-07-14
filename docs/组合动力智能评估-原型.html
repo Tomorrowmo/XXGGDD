@@ -1120,14 +1120,8 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
           <div class="toolbar" style="margin-top:12px"><button class="btn primary sm" id="llm-save">保存</button><button class="btn sm" id="llm-test">测试连接</button><span id="llm-msg" style="font-size:12px;color:var(--text-2);align-self:center"></span></div>
         </div>
         <div class="card card-pad"><h3>解析与判据配置 <span class="tag" style="margin-left:auto">可配置</span></h3>
-          <p class="muted" style="margin:3px 0 0">把原先写死在代码里的参数（表头行、通道命名、大气压修正、判据阈值）搬到这里可改，改这些不用动代码。</p>
-          <div class="placeholder" style="margin-top:10px;font-size:12.5px;color:var(--text-2);line-height:2">
-            <div>试验解析 · 分隔符 <b style="color:var(--text);font-family:var(--mono)">逗号</b> · headerIndex <b style="color:var(--text);font-family:var(--mono)">10</b></div>
-            <div>通道正则 <b style="color:var(--text);font-family:var(--mono)">流道\d+ | 室压\d+ | 隔离段\d+</b></div>
-            <div>压力修正 <b style="color:var(--text);font-family:var(--mono)">+0.101325 MPa</b></div>
-            <div>物理常数 · γ <b style="color:var(--text);font-family:var(--mono)">1.4</b>（统一，修复原 1.3/1.4 冲突）</div>
-            <div>诊断判据 · 读 <b style="color:var(--accent)">sim-knowledge/criteria.yaml</b>（护城河）</div>
-          </div>
+          <p class="muted" style="margin:3px 0 10px">把原先写死在代码里的参数（表头行、通道命名、大气压修正、γ）搬到这里可改并落盘，改这些不用动代码。判据只读——真值来自 sim-knowledge 护城河仓库。</p>
+          <div id="parse-cfg"><div class="placeholder" style="font-size:12.5px">加载中…</div></div>
         </div>
       </div>
     </section>
@@ -1982,7 +1976,41 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
     markLive();
   }
 
-  liveCompare(); liveCases(); liveUnits(); liveReport(); liveNL(); liveLLM(); liveChat(); liveExp(); liveSim(); liveSimMulti(); liveExpMulti(); livePending();
+  // ---- 解析/物理常数配置：读真实 settings + 可改可落盘（判据只读）----
+  async function liveConfig(){
+    var mount=document.getElementById('parse-cfg'); if(!mount) return;
+    var c=await getJSON(API+'/config/parse'); if(!c){ return; }  // 无后端→保持
+    var e=c.experiment, p=c.physics, cr=c.criteria||{};
+    function fld(label,id,val,ph){ return '<label class="fld"><span>'+label+'</span><input id="'+id+'" value="'+(val==null?'':String(val).replace(/"/g,'&quot;'))+'"'+(ph?' placeholder="'+ph+'"':'')+'></label>'; }
+    mount.innerHTML=
+      '<div class="sect-label" style="margin:2px 0 8px">试验解析</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">'+
+        fld('分隔符','cfg-delim',e.delimiter)+fld('编码','cfg-enc',e.encoding)+
+        fld('headerIndex','cfg-hi',e.header_index)+fld('时间列','cfg-tc',e.time_column)+
+      '</div>'+
+      '<label class="fld" style="margin-top:9px"><span>通道正则（| 分隔）</span><input id="cfg-pat" value="'+e.channel_patterns.join(' | ').replace(/"/g,'&quot;')+'"></label>'+
+      '<label class="fld" style="margin-top:9px"><span>压力大气修正 MPa</span><input id="cfg-atmos" value="'+e.atmos_correction_mpa+'"></label>'+
+      '<div class="sect-label" style="margin:14px 0 8px">物理常数</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">'+fld('γ 比热比','cfg-gamma',p.gamma)+fld('气体常数 R','cfg-R',p.gas_constant)+'</div>'+
+      '<div class="toolbar" style="margin-top:12px"><button class="btn primary sm" id="cfg-save">保存并落盘</button><span id="cfg-msg" style="font-size:12px;align-self:center;color:var(--text-2)"></span></div>'+
+      '<div class="sect-label" style="margin:14px 0 6px">诊断判据（只读 · 护城河）</div>'+
+      '<div class="note" style="margin-top:0">读 <b style="color:var(--accent)">sim-knowledge</b>'+(cr.exists?('（'+cr.n_domains+' 域）：'+(cr.domains||[]).join(' · ')):'：<b style="color:var(--warn)">未找到，检查 SIM_KNOWLEDGE 路径</b>')+'</div>';
+    document.getElementById('cfg-save').addEventListener('click', async function(){
+      var msg=document.getElementById('cfg-msg'); msg.textContent='保存中…'; msg.style.color='var(--text-2)';
+      var pats=document.getElementById('cfg-pat').value.split('|').map(function(x){return x.trim();}).filter(Boolean);
+      var body={experiment:{delimiter:document.getElementById('cfg-delim').value, encoding:document.getElementById('cfg-enc').value,
+          header_index:parseInt(document.getElementById('cfg-hi').value,10), time_column:parseInt(document.getElementById('cfg-tc').value,10),
+          channel_patterns:pats, atmos_correction_mpa:parseFloat(document.getElementById('cfg-atmos').value)},
+        physics:{gamma:parseFloat(document.getElementById('cfg-gamma').value), gas_constant:parseFloat(document.getElementById('cfg-R').value)}};
+      try{ var r=await fetch(API+'/config/parse',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+        if(r.ok){ msg.textContent='✓ 已保存并落盘（下次解析生效）'; msg.style.color='var(--good)'; }
+        else { var d=await r.json(); msg.textContent='✗ '+((d&&d.detail)||'保存失败'); msg.style.color='var(--crit)'; }
+      }catch(err){ msg.textContent='✗ 请求失败'; msg.style.color='var(--crit)'; }
+    });
+    markLive();
+  }
+
+  liveCompare(); liveCases(); liveUnits(); liveReport(); liveNL(); liveLLM(); liveChat(); liveExp(); liveSim(); liveSimMulti(); liveExpMulti(); livePending(); liveConfig();
 })();
 </script>
 </body></html>

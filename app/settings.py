@@ -112,6 +112,7 @@ class Settings:
     reports_dir: Path = ROOT / "var" / "reports"
 
     llm_config_file: Path = ROOT / "llm_config.json"   # 运行时 BYOK 覆盖存这里
+    parse_config_file: Path = ROOT / "parse_config.json"   # 解析/物理常数运行时覆盖
 
     experiment: ExperimentParseConfig = field(default_factory=ExperimentParseConfig)
     physics: PhysicsConfig = field(default_factory=PhysicsConfig)
