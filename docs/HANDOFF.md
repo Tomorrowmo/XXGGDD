@@ -20,7 +20,7 @@ export PYTHONIOENCODING=utf-8    # Windows 终端中文防乱码
 ```
 
 ## 关键环境/资产路径（都可用，已验证）
-- **切片渲染**：`D:\TOOL\Conda\conda\envs\PostProcessTool\python.exe`（VTK9.4.1+Romtek）。`app/services/viz.py` 经 `app/services/render_runner.py` **子进程**调它出四切片（surface/xy/xz/yz）。主程序在基础环境。
+- **切片渲染（2026-07-15 已独立）**：渲染代码 vendored 进平台 `app/services/render/`（`simagent_render.py` + `openfoam_loader.py`，纯标准 VTK），**不再依赖 SimGraph2 仓库**。OpenFOAM 算例用平台基础环境（VTK 9.6+）即可出图（`viz._render_python` 默认 `sys.executable`），完全自洽。仍走 `render_runner.py` **子进程**隔离出五图（slice_X/Y/Z + surf_a/b）。仅 **Fluent .cas.h5 等需 Romtek** 的格式才回退 `D:\TOOL\Conda\conda\envs\PostProcessTool\python.exe`（VTK9.4.1+Romtek）+ SimGraph2/PostEngine。结果含 `engine` 字段（`vendored-vtk` / `simgraph2-romtek`）。测试 `tests/test_render_vendored.py`。
 - **simparse 解析**：`D:/Git/GitBubProj/simcli/sim-parse/src`（`app/services/simparse_adapter.py` 直调，tier_3_metadata/tier_5_qoi 等）
 - **sim-knowledge 判据**：`D:/Git/GitBubProj/simcli/sim-knowledge`（12 域 criteria.yaml）
 - **SimGraph2**（复用来源）：`D:/Git/SimGraph2`（切片渲染 `simagent_render.render_case`；不是 DeepAgents）

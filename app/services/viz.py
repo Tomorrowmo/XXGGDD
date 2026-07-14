@@ -1,20 +1,42 @@
-"""切片/云图可视化适配器 —— 用 SimGraph2 的纯标准 VTK 渲染生成切片快照。
+"""切片/云图可视化适配器 —— 平台自有的纯标准 VTK 渲染生成切片快照。
 
-渲染依赖 VTK+Romtek，只在 PostProcessTool 环境可用；故通过**子进程**调该环境的
-python 跑 render_runner.py（SimGraph2 的分离式后处理设计），主程序可在任意环境运行。
-缺环境时优雅降级 available=False。
+渲染代码已 vendored 进平台（app/services/render/*），**不再依赖 SimGraph2 仓库**。
+OpenFOAM 算例只需一个装了 VTK 的 python——平台基础环境（VTK 9.6+）即可，故默认用
+当前解释器（sys.executable），完全自洽。需 Romtek 的格式（Fluent .cas.h5 等）才回退
+到 PostProcessTool 环境（POSTPROCESS_PYTHON）。渲染仍走**子进程**隔离，避免 VTK
+离屏渲染污染服务进程；缺环境时优雅降级 available=False。
 """
 from __future__ import annotations
 
+import glob
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 from app.settings import settings
 
 # simagent_render 产出的图名
 SLICE_NAMES = ["slice_X", "slice_Y", "slice_Z", "surf_a", "surf_b"]
+
+
+def _is_openfoam(case_path: str | Path) -> bool:
+    p = Path(case_path)
+    if str(p).lower().endswith(".foam"):
+        return True
+    if p.is_dir():
+        return (p / "system" / "controlDict").exists() or bool(glob.glob(str(p / "*.foam")))
+    return False
+
+
+def _render_python(case_path: str | Path) -> str:
+    """选渲染用的 python：OpenFOAM 用基础环境（含 VTK，自洽）；
+    需 Romtek 的格式优先 PostProcessTool，缺则退回基础环境（届时诚实报错）。"""
+    if _is_openfoam(case_path):
+        return sys.executable
+    ppt = settings.assets.postprocess_python
+    return str(ppt) if ppt and Path(ppt).exists() else sys.executable
 
 
 def preview_dir(case_path: str | Path) -> Path:
@@ -26,13 +48,17 @@ def preview_dir(case_path: str | Path) -> Path:
     return d
 
 
-def _env_ready() -> bool:
+def _env_ready(case_path: str | Path | None = None) -> bool:
+    """渲染是否可用。OpenFOAM：基础环境有 VTK 即可（几乎总为真）；
+    其它需 Romtek 的格式：要 PostProcessTool + SimGraph2 才行。"""
+    if case_path is not None and _is_openfoam(case_path):
+        return True  # 用 sys.executable（基础环境已含 VTK）
     py = settings.assets.postprocess_python
     return Path(py).exists() and settings.assets.simgraph2_root.exists()
 
 
-def available() -> bool:
-    return _env_ready()
+def available(case_path: str | Path | None = None) -> bool:
+    return _env_ready(case_path)
 
 
 def generate_previews(case_path: str | Path, scalar: str = "T", *, timeout: int = 180) -> dict:
@@ -45,16 +71,16 @@ def generate_previews(case_path: str | Path, scalar: str = "T", *, timeout: int 
     if cached:
         return {"available": True, "dir": str(out), "images": cached, "cached": True}
 
-    if not _env_ready():
+    if not _env_ready(case_path):
         return {"available": False, "dir": str(out), "images": {},
-                "reason": "PostProcessTool/SimGraph2 渲染环境不可用"}
+                "reason": "该格式需 Romtek 渲染环境（PostProcessTool + SimGraph2），当前不可用"}
 
     runner = Path(__file__).with_name("render_runner.py")
+    # SIMGRAPH2_ROOT 仅供 Romtek 回退用；OpenFOAM 走 vendored 代码不需要
     env = {**os.environ, "SIMGRAPH2_ROOT": str(settings.assets.simgraph2_root)}
     try:
         proc = subprocess.run(
-            [str(settings.assets.postprocess_python), str(runner),
-             str(case_path), str(out), scalar],
+            [_render_python(case_path), str(runner), str(case_path), str(out), scalar],
             capture_output=True, text=True, timeout=timeout, env=env,
         )
     except subprocess.TimeoutExpired:
@@ -67,7 +93,8 @@ def generate_previews(case_path: str | Path, scalar: str = "T", *, timeout: int 
 
     images = {Path(f).stem: f for f in result.get("images", [])}
     return {"available": True, "dir": str(out), "images": images,
-            "scalar": result.get("scalar"), "cached": False}
+            "scalar": result.get("scalar"), "engine": result.get("engine"),
+            "cached": False}
 
 
 def _parse_last_json(text: str) -> dict | None:
