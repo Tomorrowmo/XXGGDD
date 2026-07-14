@@ -70,6 +70,9 @@ app.include_router(vlm_router.router)
 app.include_router(ragflow_router.router)
 app.include_router(models_config_router.router)
 # 评估平台 v2 路由
+# analysis 先于 library：analysis 的字面路由（/cases/sim-compare 等）需优先于
+# library 的 /cases/{case_id:int}，否则 "sim-compare" 会被当作 case_id 触发 422。
+app.include_router(analysis_router.router)
 app.include_router(library_router.router)
 app.include_router(compare_router.router)
 app.include_router(agent_router.router)
@@ -78,7 +81,6 @@ app.include_router(knowledge_router.router)
 app.include_router(search_router.router)
 app.include_router(llm_config_router.router)
 app.include_router(chat_v2_router.router)
-app.include_router(analysis_router.router)
 
 
 @app.get("/")

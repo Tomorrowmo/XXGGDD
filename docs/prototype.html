@@ -363,6 +363,12 @@
   .iframe-mock{height:210px;background:repeating-linear-gradient(45deg,var(--surface-2),var(--surface-2) 12px,var(--surface-3) 12px,var(--surface-3) 24px);border:1px solid var(--border);border-radius:var(--r);display:flex;align-items:center;justify-content:center;color:var(--text-3);font-family:var(--mono);font-size:12px}
   .note{font-size:11.5px;color:var(--text-3);margin-top:8px;font-style:italic}
   .placeholder{border:1px dashed var(--border-strong);border-radius:var(--r);padding:20px;color:var(--text-3);background:var(--surface)}
+  .msel{display:flex;flex-wrap:wrap;gap:8px;margin-top:2px}
+  .mchip{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--text-2);background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 11px;cursor:pointer;transition:border-color .15s}
+  .mchip:hover{border-color:var(--border-strong)}
+  .mchip:has(input:checked){border-color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,var(--surface))}
+  .mchip input{accent-color:var(--accent);cursor:pointer}
+  .mchip b{color:var(--text);font-weight:600}
 
   /* ============ CHAT ============ */
   .chat{display:grid;grid-template-columns:230px 1fr;gap:0;height:100%;width:100%;border:1px solid var(--border);border-radius:var(--r);overflow:hidden;background:var(--surface)}
@@ -1823,6 +1829,107 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
     load(sims[0].id);
   }
 
-  liveCompare(); liveCases(); liveUnits(); liveReport(); liveNL(); liveLLM(); liveChat(); liveExp(); liveSim();
+  // ---- 多选算例/车次公共小工具 ----
+  function devColor(ad){ return ad<=1?'var(--good)':(ad<=3?'var(--warn)':'var(--crit)'); }
+  // 按工况分组，返回参与人数最多的工况成员 id（作默认勾选）
+  function defaultPick(list){
+    var g={}; list.forEach(function(c){ var op=c.operating_point||'—'; (g[op]=g[op]||[]).push(c.id); });
+    var best=[]; Object.keys(g).forEach(function(op){ if(g[op].length>best.length) best=g[op]; });
+    return best.length>=2?best:list.map(function(c){return c.id;});
+  }
+  function selBox(list, picked, prefix){
+    return '<div class="msel">'+list.map(function(c){
+      var on=picked.indexOf(c.id)>=0?' checked':'';
+      var sub=c.kind==='simulation'
+        ? (c.context&&c.context.mesh_cells?((c.context.mesh_cells/1e6).toFixed(1)+'M · y+'+(c.context.y_plus||'—')):(c.source_format||''))
+        : ((c.context&&c.context.channels?c.context.channels+'通道':'')+' · 工况 '+(c.operating_point||'—'));
+      return '<label class="mchip"><input type="checkbox" class="'+prefix+'-ck" value="'+c.id+'"'+on+'><b>'+c.name+'</b> <span style="color:var(--text-3)">'+c.unit+'</span> <span style="color:var(--text-3);font-size:11px">'+sub+'</span></label>';
+    }).join('')+'</div>';
+  }
+  function pickedIds(prefix){
+    return Array.prototype.slice.call(document.querySelectorAll('.'+prefix+'-ck:checked')).map(function(x){return +x.value;});
+  }
+
+  // ---- 仿真分析·多算例：技术性自比（网格无关性 / 参数敏感性）真实数据 ----
+  async function liveSimMulti(){
+    var pane=document.querySelector('[data-subpane="sim-multi"]'); if(!pane) return;
+    var cases=((await getJSON(API+'/cases'))||{}).cases; if(cases===null) return;
+    var sims=cases.filter(function(c){return c.kind==='simulation';});
+    var banner='<div class="relbanner" style="background:var(--surface-2);border-left-color:var(--text-3)"><span class="ic">🔬</span><div><b>技术性自比</b>：同一算例不同<b>网格 / 参数</b>的横向验证（网格无关性、湍流模型敏感性），判断"仿真本身收没收干净"。<b>不含实验真值、不评级</b>——跨单位对真值的正式评判请去 <span class="lnk" data-go="compare">对比评估</span>。</div></div>';
+    if(sims.length<2){ pane.innerHTML=banner+'<div class="placeholder" style="margin-top:12px">仿真算例不足 2 个，无法做技术性自比。请在「数据资源库」入库同一算例的多套网格 / 多组参数版本。</div>'; return; }
+    var picked=defaultPick(sims);
+    pane.innerHTML=banner+
+      '<div class="toolbar" style="margin-top:10px"><span class="chip">选择参与自比的算例版本（≥2）</span><div class="spacer"></div><button class="btn primary sm" id="simx-run">对比 →</button></div>'+
+      selBox(sims,picked,'simx')+'<div id="simx-out" style="margin-top:12px"></div>';
+    async function run(){
+      var ids=pickedIds('simx'); var out=document.getElementById('simx-out');
+      if(ids.length<2){ out.innerHTML='<div class="placeholder">请至少勾选 2 个算例。</div>'; return; }
+      out.innerHTML='<p class="muted">对比中…</p>';
+      var d=await getJSON(API+'/cases/sim-compare?ids='+ids.join(','));
+      if(!d||!d.available){ out.innerHTML='<div class="placeholder">'+((d&&d.reason)||'对比失败')+'</div>'; return; }
+      var cs=d.cases, refId=d.reference_id;
+      var head='<div class="sect-label">参与算例（基准 = 网格最细者，标 ★）</div><div class="tblwrap"><table><thead><tr><th>算例</th><th>单位</th><th class="num">网格</th><th class="num">y+</th><th>求解器</th></tr></thead><tbody>'+
+        cs.map(function(c){var r=c.id===refId?' ★':''; return '<tr><td class="qty">'+c.name+r+'</td><td>'+c.unit+'</td><td class="num">'+(c.mesh_cells?(c.mesh_cells/1e6).toFixed(1)+'M':'—')+'</td><td class="num">'+(c.y_plus||'—')+'</td><td class="muted" style="color:var(--text-2)">'+(c.solver||'—')+'</td></tr>';}).join('')+'</tbody></table></div>';
+      var th='<tr><th>QOI</th>'+cs.map(function(c){return '<th class="num">'+c.name+(c.id===refId?' ★':'')+'</th>';}).join('')+'</tr>';
+      var body=d.rows.map(function(row){
+        var tds=cs.map(function(c){ var v=row.values.filter(function(x){return x.case_id===c.id;})[0];
+          if(!v||v.value===null) return '<td class="num">—</td>';
+          if(v.is_ref) return '<td class="num"><span class="cell-val">'+v.value+'</span><span class="cell-dev" style="color:var(--text-3)">基准</span></td>';
+          var dv=v.deviation_pct; var ds=dv===null?'':'<span class="cell-dev" style="color:'+devColor(Math.abs(dv))+'">'+(dv>0?'+':'')+dv+'%</span>';
+          return '<td class="num"><span class="cell-val">'+v.value+'</span>'+ds+'</td>'; }).join('');
+        return '<tr><td class="qty">'+row.quantity+' <small style="color:var(--text-3)">'+(row.unit||'')+'</small></td>'+tds+'</tr>';
+      }).join('');
+      var tbl='<div class="sect-label">逐 QOI 相对基准偏差（<span style="color:var(--good)">绿</span>≤1% · <span style="color:var(--warn)">黄</span>≤3% · <span style="color:var(--crit)">红</span>&gt;3%）</div><div class="tblwrap"><table><thead>'+th+'</thead><tbody>'+body+'</tbody></table></div>';
+      var lv=confCls(d.verdict_level);
+      var diag='<div class="diag" style="margin-top:14px"><div class="hd"><span class="yuan">渊</span>网格无关性结论 <span class="badge '+lv+'" style="margin-left:auto"><span class="d"></span>'+d.verdict_level+'</span></div><p style="margin:0">'+d.verdict+'</p></div>';
+      out.innerHTML=head+tbl+diag;
+    }
+    document.getElementById('simx-run').addEventListener('click', run);
+    run();
+  }
+
+  // ---- 试验分析·多车次：重复性核查（均值±σ / CV / 离群）真实数据 ----
+  async function liveExpMulti(){
+    var pane=document.querySelector('[data-subpane="exp-multi"]'); if(!pane) return;
+    var cases=((await getJSON(API+'/cases'))||{}).cases; if(cases===null) return;
+    var exps=cases.filter(function(c){return c.kind==='experiment';});
+    if(exps.length<2){ pane.innerHTML='<div class="placeholder" style="margin:6px 0">试验车次不足 2 个，无法做重复性核查。请入库同工况的多次试车数据。</div>'; return; }
+    var picked=defaultPick(exps);
+    pane.innerHTML='<div class="toolbar"><span class="chip">选择同工况重复车次（≥2）</span><div class="spacer"></div><button class="btn primary sm" id="expx-run">核查 →</button></div>'+
+      selBox(exps,picked,'expx')+'<div id="expx-out" style="margin-top:12px"></div>';
+    async function run(){
+      var ids=pickedIds('expx'); var out=document.getElementById('expx-out');
+      if(ids.length<2){ out.innerHTML='<div class="placeholder">请至少勾选 2 个车次。</div>'; return; }
+      out.innerHTML='<p class="muted">核查中…</p>';
+      var d=await getJSON(API+'/cases/exp-compare?ids='+ids.join(','));
+      if(!d||!d.available){ out.innerHTML='<div class="placeholder">'+((d&&d.reason)||'核查失败')+'</div>'; return; }
+      var cs=d.cases, oid=d.outlier_case_id;
+      var oname=oid?(cs.filter(function(c){return c.id===oid;})[0]||{}).name:null;
+      var stat='<div class="stat-row"><div class="stat"><div class="k">参评车次</div><div class="v">'+cs.length+'</div></div>'+
+        '<div class="stat"><div class="k">平均 CV</div><div class="v" style="color:'+(d.avg_cv<=2?'var(--good)':'var(--warn)')+'">'+d.avg_cv+'<small>%</small></div></div>'+
+        '<div class="stat"><div class="k">离群车次</div><div class="v" style="color:'+(oid?'var(--warn)':'var(--good)')+'">'+(oname||'无')+'</div></div>'+
+        '<div class="stat"><div class="k">剔离群后 CV</div><div class="v" style="color:var(--good)">'+d.avg_cv_clean+'<small>%</small></div></div></div>';
+      var th='<tr><th>物理量</th>'+cs.map(function(c){return '<th class="num">'+c.name+(c.id===oid?' ⚠':'')+'</th>';}).join('')+'<th class="num">均值 ± σ</th><th class="num">CV</th><th>判定</th></tr>';
+      var body=d.rows.map(function(row){
+        var tds=cs.map(function(c){ var v=row.values.filter(function(x){return x.case_id===c.id;})[0];
+          var isFar=row.far_case_id===c.id;
+          return '<td class="num"'+(isFar?' style="color:var(--warn)"':'')+'>'+(v?v.value:'—')+'</td>'; }).join('');
+        var vc=row.verdict==='一致'?'b-good':'b-warn';
+        return '<tr class="stripe '+(row.verdict==='一致'?'ok':'warn')+'"><td class="qty">'+row.quantity+' <small style="color:var(--text-3)">'+(row.unit||'')+'</small></td>'+tds+
+          '<td class="num">'+row.mean+' ± '+row.std+'</td><td class="num" style="color:'+(row.cv_pct<=2?'var(--good)':'var(--warn)')+'">'+row.cv_pct+'%</td><td><span class="badge '+vc+'">'+row.verdict+'</span></td></tr>';
+      }).join('');
+      var tbl='<div class="sect-label">重复性统计 · 关键量（均值 ± σ · 变异系数 CV）</div><div class="tblwrap"><table><thead>'+th+'</thead><tbody>'+body+'</tbody></table></div>';
+      var diag='';
+      if(oid){ diag='<div class="diag" style="margin-top:14px"><div class="hd"><span class="yuan">析</span>重复性结论 <span class="badge b-high" style="margin-left:auto"><span class="d"></span>HIGH</span></div>'+
+        '<p><b style="color:var(--text)">离群</b>：'+oname+' 在多个关键量上系统性偏离均值 → 疑似当日来流条件或传感器零点漂移，建议复核试验记录。</p>'+
+        '<p style="margin:0"><b style="color:var(--text)">真值建议</b>：剔除 '+oname+' 后平均 CV '+d.avg_cv_clean+'%，取其余车次均值作该工况实验真值。</p></div>';
+      } else { diag='<div class="diag" style="margin-top:14px"><div class="hd"><span class="yuan">析</span>重复性结论 <span class="badge b-high" style="margin-left:auto"><span class="d"></span>HIGH</span></div><p style="margin:0">各车次关键量平均 CV '+d.avg_cv+'%，<b style="color:var(--good)">无显著离群</b>，重复性良好，可取各车次均值作实验真值。</p></div>'; }
+      out.innerHTML=stat+tbl+diag;
+    }
+    document.getElementById('expx-run').addEventListener('click', run);
+    run();
+  }
+
+  liveCompare(); liveCases(); liveUnits(); liveReport(); liveNL(); liveLLM(); liveChat(); liveExp(); liveSim(); liveSimMulti(); liveExpMulti();
 })();
 </script>
