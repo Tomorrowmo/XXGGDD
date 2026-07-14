@@ -617,6 +617,7 @@
         <div class="spacer"></div>
         <button class="btn primary sm" id="go-compare" disabled>已选 <span id="seln">0</span> 项 → 去对比</button>
       </div>
+      <div id="pending-panel" style="display:none;margin-bottom:14px"></div>
       <div class="grid cols-lib">
         <div class="card card-pad tree" id="lib-tree">
           <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin-bottom:6px">按单位 / 批次浏览</div>
@@ -1698,7 +1699,7 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
           msg.textContent=d.deduped?'已存在（去重跳过）':'入库成功'; msg.style.color='var(--good)';
           rd.innerHTML='<div class="src-item"><span class="src-n">✓</span><div><div class="src-t">'+(d.name||'')+'</div><div class="src-m">'+(d.kind||'')+' · 解析 '+(d.parse_status||'')+' · 工况对齐 '+((d.op_link&&d.op_link.confidence)||'-')+'</div></div></div>';
         } else { msg.textContent='失败：'+(d.reason||d.detail||'未知'); msg.style.color='var(--crit)'; }
-        liveCases(); liveUnits();  // 刷新资源库卡片 + 树/统计
+        liveCases(); liveUnits(); livePending();  // 刷新资源库卡片 + 树/统计 + 待对齐
       }catch(e){ msg.textContent='请求失败（后端未启动？）'; msg.style.color='var(--crit)'; }
     });
   })();
@@ -1931,7 +1932,44 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
     run();
   }
 
-  liveCompare(); liveCases(); liveUnits(); liveReport(); liveNL(); liveLLM(); liveChat(); liveExp(); liveSim(); liveSimMulti(); liveExpMulti();
+  // ---- PENDING 人工对齐面板：为工况未识别的算例/车次指定规范工况 ----
+  async function livePending(){
+    var mount=document.getElementById('pending-panel'); if(!mount) return;
+    var pj=await getJSON(API+'/pending'); if(pj===null) return;   // 无后端→保持
+    var pending=(pj&&pj.pending)||[];
+    var navDot=document.querySelector('.nav [data-go="library"] .badge-dot');
+    if(navDot) navDot.style.display=pending.length?'':'none';
+    if(!pending.length){ mount.innerHTML=''; mount.style.display='none'; markLive(); return; }
+    var cases=((await getJSON(API+'/cases'))||{}).cases||[];
+    var ops=[]; cases.forEach(function(c){ if(c.operating_point && c.operating_point!=='__UNALIGNED__' && ops.indexOf(c.operating_point)<0) ops.push(c.operating_point); });
+    mount.style.display='';
+    mount.innerHTML='<div class="relbanner" style="border-left-color:var(--pending);background:var(--pending-bg)"><span class="ic">⚠️</span><div><b>'+pending.length+' 项待人工对齐</b>：以下算例/车次工况无法自动识别，指定规范工况后方可进入多源对比（"同一工况才能比"）。</div></div>'+
+      '<div class="tblwrap" style="margin-top:10px"><table><thead><tr><th>对象</th><th>单位</th><th>指定工况（选已有或输入新）</th><th style="width:96px"></th></tr></thead><tbody>'+
+      pending.map(function(p){ return '<tr data-lid="'+p.link_id+'"><td class="qty">'+p.name+' <span class="badge b-pending"><span class="d"></span>PENDING</span></td><td>'+p.unit+'</td>'+
+        '<td><input class="pend-key" list="pend-ops" placeholder="如 Ma6-60kPa" style="width:210px;font-size:12.5px;background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:6px 9px;color:var(--text)"></td>'+
+        '<td><button class="btn primary sm pend-go">指定 →</button></td></tr>'; }).join('')+
+      '</tbody></table></div><datalist id="pend-ops">'+ops.map(function(o){return '<option value="'+o+'"></option>';}).join('')+'</datalist>'+
+      '<div id="pend-msg" style="font-size:12px;margin-top:6px;color:var(--text-3)"></div>';
+    mount.querySelectorAll('.pend-go').forEach(function(btn){
+      btn.addEventListener('click', async function(){
+        var tr=btn.closest('tr'); var lid=tr.getAttribute('data-lid');
+        var key=tr.querySelector('.pend-key').value.trim();
+        var msg=document.getElementById('pend-msg');
+        if(!key){ msg.textContent='请输入或选择工况标识'; msg.style.color='var(--crit)'; return; }
+        btn.textContent='…'; btn.disabled=true;
+        try{
+          var r=await fetch(API+'/links/'+lid+'/assign-op',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({canonical_key:key})});
+          var d=await r.json();
+          if(d&&d.ok){ msg.textContent='✓ 已指定 '+key+'，已并入对比'; msg.style.color='var(--good)';
+            livePending(); liveCases(); liveUnits(); liveCompare(); liveReport(); liveExpMulti(); }
+          else { msg.textContent='失败：'+((d&&d.reason)||d.detail||'未知'); msg.style.color='var(--crit)'; btn.textContent='指定 →'; btn.disabled=false; }
+        }catch(e){ msg.textContent='请求失败（后端未启动？）'; msg.style.color='var(--crit)'; btn.textContent='指定 →'; btn.disabled=false; }
+      });
+    });
+    markLive();
+  }
+
+  liveCompare(); liveCases(); liveUnits(); liveReport(); liveNL(); liveLLM(); liveChat(); liveExp(); liveSim(); liveSimMulti(); liveExpMulti(); livePending();
 })();
 </script>
 </body></html>
