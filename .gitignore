@@ -25,3 +25,4 @@ var/
 ingest/
 parse_config.json
 algorithms.json
+var/previews/_srccache/

@@ -2042,13 +2042,13 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
         if(it.dataset.ap==='a-cloud'&&!ttLoaded){ ttLoaded=true; load3D(cid); }
       });
     }
-    // vtk.js 按需加载（CDN；离线则降级转台）
+    // vtk.js 按需加载：优先本地打包 /static/vtk.js（内网/离线可用），失败再退 CDN
     function ensureVtk(){ return new Promise(function(res,rej){ if(window.vtk) return res(window.vtk);
       if(window.__vtkQ){ window.__vtkQ.push([res,rej]); return; } window.__vtkQ=[[res,rej]];
-      var s=document.createElement('script'); s.src='https://unpkg.com/vtk.js@32.9.0/vtk.js';
-      s.onload=function(){ (window.__vtkQ||[]).forEach(function(c){c[0](window.vtk);}); window.__vtkQ=null; };
-      s.onerror=function(){ (window.__vtkQ||[]).forEach(function(c){c[1](new Error('vtk.js 加载失败'));}); window.__vtkQ=null; };
-      document.head.appendChild(s); }); }
+      function done(){ (window.__vtkQ||[]).forEach(function(c){c[0](window.vtk);}); window.__vtkQ=null; }
+      function fail(){ (window.__vtkQ||[]).forEach(function(c){c[1](new Error('vtk.js 加载失败'));}); window.__vtkQ=null; }
+      function load(src, onerr){ var s=document.createElement('script'); s.src=src; s.onload=function(){ window.vtk?done():onerr(); }; s.onerror=onerr; document.head.appendChild(s); }
+      load('/static/vtk.js', function(){ load('https://unpkg.com/vtk.js@32.9.0/vtk.js', fail); }); }); }
     async function load3D(cid){
       var box=document.getElementById('v3d'), st=document.getElementById('v3d-status'); if(!box) return;
       box.innerHTML='<div class="placeholder" style="border:0;background:transparent">生成边界面 VTP…</div>';

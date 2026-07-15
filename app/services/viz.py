@@ -9,13 +9,42 @@ OpenFOAM 算例只需一个装了 VTK 的 python——平台基础环境（VTK 9
 from __future__ import annotations
 
 import glob
+import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 from app.settings import settings
+
+
+def _render_source(case_path: str | Path) -> str:
+    """Romtek/VTK 的 C++ 读取器在 Windows 上打不开含中文/非 ASCII 的路径（"file not found"）。
+
+    路径非 ASCII 时，把算例文件复制到平台内的 ASCII 缓存目录再返回该路径（文件名多为 ASCII，
+    只是父目录含中文）。传统 .cas / .cas.h5 会一并复制其 .dat 伴随文件。目录型(OpenFOAM)一般 ASCII，原样返回。
+    """
+    p = Path(case_path)
+    if str(p).isascii():
+        return str(p)
+    if p.is_dir():
+        return str(p)   # OpenFOAM 目录通常 ASCII；非 ASCII 目录暂不处理
+    cache = settings.previews_dir / "_srccache" / hashlib.sha1(str(p.resolve()).encode()).hexdigest()[:12]
+    fname = p.name if p.name.isascii() else ("case" + p.suffix.lower())
+    dst = cache / fname
+    if not dst.exists():
+        cache.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(p, dst)
+        # 复制同基名的场数据伴随文件
+        for a, b in ((".cas", ".dat"), (".cas.h5", ".dat.h5"), (".cas.gz", ".dat.gz")):
+            low = p.name.lower()
+            if low.endswith(a):
+                comp = p.with_name(p.name[: -len(a)] + b)
+                if comp.exists():
+                    shutil.copy2(comp, cache / (comp.name if comp.name.isascii() else ("case" + b)))
+    return str(dst)
 
 # simagent_render 产出的图名
 SLICE_NAMES = ["slice_X", "slice_Y", "slice_Z", "surf_a", "surf_b"]
@@ -88,8 +117,8 @@ def generate_vtp(case_path: str | Path, *, timeout: int = 240) -> dict:
     env = {**os.environ, "SIMGRAPH2_ROOT": str(settings.assets.simgraph2_root)}
     try:
         proc = subprocess.run(
-            [_render_python(case_path), str(runner), str(case_path), str(out), "vtp"],
-            capture_output=True, text=True, timeout=timeout, env=env)
+            [_render_python(case_path), str(runner), _render_source(case_path), str(out), "vtp"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout, env=env)
     except subprocess.TimeoutExpired:
         return {"available": False, "reason": "VTP 导出超时"}
     res = _parse_last_json(proc.stdout)
@@ -117,8 +146,8 @@ def generate_turntable(case_path: str | Path, n_frames: int = 24, *, timeout: in
     env = {**os.environ, "SIMGRAPH2_ROOT": str(settings.assets.simgraph2_root)}
     try:
         proc = subprocess.run(
-            [_render_python(case_path), str(runner), str(case_path), str(out), f"turntable:{n_frames}"],
-            capture_output=True, text=True, timeout=timeout, env=env)
+            [_render_python(case_path), str(runner), _render_source(case_path), str(out), f"turntable:{n_frames}"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout, env=env)
     except subprocess.TimeoutExpired:
         return {"available": False, "reason": "转台渲染超时"}
     res = _parse_last_json(proc.stdout)
@@ -149,8 +178,8 @@ def generate_previews(case_path: str | Path, scalar: str = "T", *, timeout: int 
     env = {**os.environ, "SIMGRAPH2_ROOT": str(settings.assets.simgraph2_root)}
     try:
         proc = subprocess.run(
-            [_render_python(case_path), str(runner), str(case_path), str(out), scalar],
-            capture_output=True, text=True, timeout=timeout, env=env,
+            [_render_python(case_path), str(runner), _render_source(case_path), str(out), scalar],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout, env=env,
         )
     except subprocess.TimeoutExpired:
         return {"available": False, "dir": str(out), "images": {}, "reason": "渲染超时"}
