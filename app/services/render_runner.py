@@ -18,6 +18,67 @@ def _emit(d):
     print(json.dumps(d, ensure_ascii=False))
 
 
+# 标量优先级：马赫 > 温度 > 压力系数 > 压力 > 密度 > 速度分量 > 其它（用真实存在的场名，避免黑白网格）
+_SCALAR_PREFER = [
+    ("mach", 0), ("temperature", 1), ("^t$|^temp", 1),
+    ("coefpressure|^cp$|pressurecoef", 2), ("pressure|^p$", 3),
+    ("density|^rho$", 4), ("velocitymag|^umag|velocity|^u", 5),
+]
+
+
+def _rank(name: str) -> int:
+    import re
+    low = (name or "").lower()
+    for pat, r in _SCALAR_PREFER:
+        if re.search(pat, low):
+            return r
+    return 99
+
+
+def _detect_scalars(mb) -> list:
+    """扫 multiblock 里真实存在的单分量标量场，按物理意义优先级排序。
+
+    避免写死 ['T','Mach',...] 在不同学科算例（气动 CGNS 用 Density/Pressure/Mach，
+    燃烧 OpenFOAM 用 T）上找不到场→渲成无色网格。
+    """
+    found: dict[str, int] = {}
+    for i in range(mb.GetNumberOfBlocks()):
+        b = mb.GetBlock(i)
+        if b is None:
+            continue
+        for getter in (getattr(b, "GetPointData", None), getattr(b, "GetCellData", None)):
+            if getter is None:
+                continue
+            pd = getter()
+            for a in range(pd.GetNumberOfArrays()):
+                arr = pd.GetArray(a)
+                if arr is None or arr.GetNumberOfComponents() != 1:
+                    continue
+                nm = pd.GetArrayName(a)
+                if nm and nm not in found:
+                    found[nm] = _rank(nm)
+    return sorted(found, key=lambda k: (found[k], k))
+
+
+_GENERIC = {"t", "mach", "p", "u", "rho"}
+
+
+def _scalar_candidates(mb, preferred: str) -> list:
+    """尝试顺序：数据里真实存在的场（按物理优先级）优先 → 用户指定 → 常见名兜底。
+
+    真实存在的场放最前，避免 render_case 用一个不存在的名（如默认 'T'）渲成无色网格却"成功"。
+    """
+    detected = _detect_scalars(mb)
+    order = []
+    # 若 preferred 是具体（非泛用默认名）且存在于数据，优先它
+    if preferred and preferred.lower() not in _GENERIC and preferred in detected:
+        order.append(preferred)
+    for s in detected + [preferred, "T", "Mach", "p", "U", "rho"]:
+        if s and s not in order:
+            order.append(s)
+    return order
+
+
 def _is_openfoam(case_path: str) -> bool:
     if case_path.lower().endswith(".foam"):
         return True
@@ -37,7 +98,7 @@ def _render_openfoam(case_path: str, out_dir: str, scalar: str) -> dict:
     if case_path.lower().endswith(".foam"):
         case_path = os.path.dirname(case_path)
     mb = openfoam_loader.load_openfoam(case_path)
-    for sc in [scalar, "T", "Mach", "p", "U", "rho"]:
+    for sc in _scalar_candidates(mb, scalar):
         try:
             SR.render_case(mb, sc, out_dir)
             imgs = sorted(os.path.basename(p) for p in glob.glob(os.path.join(out_dir, "*.png")))
@@ -70,7 +131,7 @@ def _render_via_simgraph2(case_path: str, out_dir: str, scalar: str) -> dict:
         if isinstance(r, dict) and r.get("error"):
             return {"ok": False, "error": r["error"]}
         mb = eng.session_mgr.get(sid).post_data.get_vtk_data()
-        for sc in [scalar, "T", "Mach", "p", "U", "rho"]:
+        for sc in _scalar_candidates(mb, scalar):
             try:
                 SR.render_case(mb, sc, out_dir)
                 imgs = sorted(os.path.basename(p) for p in glob.glob(os.path.join(out_dir, "*.png")))
