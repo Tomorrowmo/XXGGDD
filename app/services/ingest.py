@@ -20,8 +20,8 @@ from app.services import experiment as exp_svc
 from app.services import viz
 
 
-# 注意：Fluent 传统二进制 .cas/.dat（非 HDF5）不受支持——需在 Fluent 导出为 .cas.h5/.dat.h5 或 .cgns
-SIM_EXTS = {".h5", ".foam", ".cgns"}
+# 仿真格式：OpenFOAM 目录 / CGNS / Fluent（HDF5 .cas.h5、传统 .cas、.cas.gz——simparse 均支持）
+SIM_EXTS = {".h5", ".foam", ".cgns", ".cas"}
 EXP_EXTS = {".txt", ".csv"}
 
 
@@ -38,14 +38,14 @@ def _is_openfoam_dir(path: Path) -> bool:
 
 
 def _sim_file_in_dir(path: Path) -> Path | None:
-    """目录内的主仿真文件：CGNS 优先，其次 Fluent HDF5(.cas.h5)。找不到返回 None。"""
-    cgns = sorted(path.glob("*.cgns"))
-    if cgns:
-        return cgns[0]
-    cas = sorted(path.glob("*.cas.h5"))
-    dat = sorted(path.glob("*.dat.h5"))
-    if cas and dat:
-        return cas[0]
+    """目录内的主仿真文件。优先顺序：Fluent HDF5(.cas.h5) > CGNS(.cgns) > Fluent 传统(.cas/.cas.gz)。
+
+    CGNS 排在传统 .cas 之前：两者都能被 simparse 解析，但 CGNS 的三维渲染更稳。找不到返回 None。
+    """
+    for pat in ("*.cas.h5", "*.cgns", "*.cas", "*.cas.gz"):
+        matches = sorted(path.glob(pat))
+        if matches:
+            return matches[0]
     return None
 
 
@@ -74,26 +74,25 @@ def resolve_case_path(path: Path) -> Path:
 
 
 _SUPPORTED_HINT = ("支持格式：OpenFOAM 目录(含 system/controlDict)、CGNS(.cgns)、"
-                   "Fluent HDF5(.cas.h5 + .dat.h5)、试验数据(.txt/.csv)")
+                   "Fluent(HDF5 .cas.h5+.dat.h5 / 传统 .cas+.dat / .cas.gz)、试验数据(.txt/.csv)")
 
 
 def unsupported_reason(path: Path) -> str:
-    """给出"为什么不支持"的具体说明——列出目录内实际扩展名 + 支持清单 + Fluent 传统格式提示。"""
+    """给出"为什么不支持"的具体说明——列出目录内实际扩展名 + 支持清单 + 具体提示。"""
     if path.is_dir():
         exts = sorted({p.suffix.lower() for p in path.iterdir() if p.is_file()})
-        has_legacy = any(e in (".cas", ".dat") for e in exts)
         subdirs = [p.name for p in path.iterdir() if p.is_dir()]
-        detail = f"目录直接包含文件类型：{', '.join(exts) if exts else '（无文件，仅子目录：' + ', '.join(subdirs[:5]) + '）'}"
+        detail = (f"目录直接包含文件类型：{', '.join(exts)}" if exts
+                  else f"目录内无文件，仅子目录：{', '.join(subdirs[:5])}")
         tips = []
-        if has_legacy:
-            tips.append("检测到 Fluent 传统 .cas/.dat（二进制，非 HDF5）——请在 Fluent 里 File→Export 导出为 .cas.h5/.dat.h5 或 .cgns")
-        if subdirs and not exts:
+        if subdirs and not any(e in exts for e in (".cas", ".cgns", ".h5", ".foam")):
             tips.append("看起来是含子目录的父目录——若里面是多个算例，请勾选『批量目录扫描』；若是单个算例，请把路径指到含算例文件的子目录")
-        return f"未识别为可入库算例。{detail}。{_SUPPORTED_HINT}。" + ("；".join(tips) and ("提示：" + "；".join(tips)))
+        joined = "；".join(tips)
+        return f"未识别为可入库算例。{detail}。{_SUPPORTED_HINT}。" + (("提示：" + joined) if joined else "")
     ext = path.suffix.lower() or "（无扩展名）"
     tip = ""
-    if ext in (".cas", ".dat"):
-        tip = "。Fluent 传统 .cas/.dat 为二进制格式不支持，请导出为 .cas.h5/.dat.h5 或 .cgns"
+    if ext == ".dat":
+        tip = "。.dat 是场数据伴随文件，请把路径指向对应的 .cas（Fluent 传统）或 .cas.h5"
     return f"文件类型 {ext} 不支持。{_SUPPORTED_HINT}{tip}"
 
 
@@ -174,9 +173,15 @@ def ingest_steps(db: Session, path: str | Path, *, unit_name: str,
             src_name = resolved.stem
         path = resolved
     is_of = path.is_dir()
-    sfmt = ("openfoam" if is_of else
-            ("cgns" if path.suffix.lower() == ".cgns" else "fluent-hdf5")) \
-        if kind == CaseKind.SIMULATION else "txt-experiment"
+    if kind != CaseKind.SIMULATION:
+        sfmt = "txt-experiment"
+    elif is_of:
+        sfmt = "openfoam"
+    else:
+        low = path.name.lower()
+        sfmt = ("cgns" if low.endswith(".cgns") else
+                "fluent-hdf5" if low.endswith(".cas.h5") else
+                "fluent-legacy" if low.endswith((".cas", ".cas.gz")) else "hdf5")
     kind_txt = ("仿真算例 · " + sfmt) if kind == CaseKind.SIMULATION else "试验数据 · txt/csv"
     yield step("detect", "ok", kind_txt)
 

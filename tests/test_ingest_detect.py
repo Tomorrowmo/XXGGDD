@@ -6,10 +6,10 @@ from app.services.ingest import (
 )
 
 
-def test_cgns_dir_detected_and_resolved(tmp_path):
+def test_cgns_preferred_over_legacy_cas(tmp_path):
     (tmp_path / "hb2steady.cgns").write_bytes(b"cgns")
-    (tmp_path / "out.cas").write_bytes(b'(0 "fluent"')      # 传统二进制，忽略
-    assert detect_kind(tmp_path) == CaseKind.SIMULATION      # 目录含 .cgns → 仿真
+    (tmp_path / "out.cas").write_bytes(b'(0 "fluent"')      # 传统 .cas 也支持，但 CGNS 优先(渲染更稳)
+    assert detect_kind(tmp_path) == CaseKind.SIMULATION
     assert resolve_case_path(tmp_path).name == "hb2steady.cgns"
 
 
@@ -17,15 +17,24 @@ def test_fluent_hdf5_pair_dir(tmp_path):
     (tmp_path / "case.cas.h5").write_bytes(b"\x89HDF")
     (tmp_path / "case.dat.h5").write_bytes(b"\x89HDF")
     assert detect_kind(tmp_path) == CaseKind.SIMULATION
-    assert resolve_case_path(tmp_path).name == "case.cas.h5"
+    assert resolve_case_path(tmp_path).name == "case.cas.h5"   # HDF5 最优先
 
 
-def test_legacy_cas_file_rejected(tmp_path):
+def test_fluent_legacy_cas_supported(tmp_path):
+    # simparse 支持 Fluent 传统 .cas —— 应识别为仿真，不再拒绝
     f = tmp_path / "out.cas"
     f.write_bytes(b'(0 "fluent"')
-    assert detect_kind(f) is None                            # 传统 .cas 二进制不支持
-    r = unsupported_reason(f)
-    assert ".cas" in r and ("导出" in r or ".cas.h5" in r or ".cgns" in r)
+    assert detect_kind(f) == CaseKind.SIMULATION
+    # 只有 .cas（无 cgns）的目录 → 解析到该 .cas
+    (tmp_path / "out.dat").write_bytes(b'(0 "fluent"')
+    assert resolve_case_path(tmp_path).name == "out.cas"
+
+
+def test_dat_alone_reason(tmp_path):
+    f = tmp_path / "out.dat"
+    f.write_bytes(b"x")
+    assert detect_kind(f) is None
+    assert ".cas" in unsupported_reason(f)
 
 
 def test_parent_dir_only_subdirs_reason(tmp_path):
