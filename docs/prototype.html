@@ -1353,7 +1353,10 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
   $$('.dcard .chk').forEach(chk=>chk.addEventListener('change', refreshSel));
   $('#go-compare').addEventListener('click', ()=>{ var n=+($('#seln').textContent||0);
     if(n<2){ toast('请先在下方勾选至少 2 个「同工况」对象，再点去对比'); return; }
-    toast('已带 '+n+' 个对象进入对比'); go('compare'); });
+    // 统计所选对象的工况，取占比最多者 → 进对比页时定位到该工况（否则对比页只显默认工况，看着没变）
+    var cnt={}; $$('.dcard').forEach(function(c){ var chk=c.querySelector('.chk'); if(chk&&chk.checked&&!chk.disabled){ var op=c.getAttribute('data-op')||''; if(op&&op!=='—'&&op!=='__UNALIGNED__') cnt[op]=(cnt[op]||0)+1; } });
+    var op=Object.keys(cnt).sort(function(a,b){return cnt[b]-cnt[a];})[0];
+    toast(op?('进入工况 '+op+' 的对比（'+n+' 项）'):('已带 '+n+' 个对象进入对比')); go('compare'); if(window.compareGoto) window.compareGoto(op); });
 
   // data preview drawer
   const drawer=$('#drawer'), drawerMask=$('#drawer-mask');
@@ -1556,6 +1559,8 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
     }
     function bindOp(){ var s=document.getElementById('cmp-op'); if(s) s.addEventListener('change', function(){ renderOp(s.value); }); }
     renderOp(ops[0]);
+    // 供资源库"去对比"定位到所选对象的工况（否则对比页永远只显默认工况）
+    window.compareGoto=function(op){ renderOp(op && ops.indexOf(op)>=0 ? op : ops[0]); };
   }
 
   function thumb(kind){ return kind==='experiment'
@@ -1573,7 +1578,7 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
         if(c.context.y_plus) meta.push('y+ <b>~'+c.context.y_plus+'</b>');
         if(c.context.channels) meta.push('通道 <b>'+c.context.channels+'</b>'); }
       var goto=c.kind==='experiment'?'exp':'sim';
-      return '<div class="dcard" data-cid="'+c.id+'" data-unit="'+c.unit+'" data-goto="'+goto+'"><input type="checkbox" class="chk" />'+thumb(c.kind)+
+      return '<div class="dcard" data-cid="'+c.id+'" data-unit="'+c.unit+'" data-op="'+(c.operating_point||'')+'" data-goto="'+goto+'"><input type="checkbox" class="chk" />'+thumb(c.kind)+
         '<div class="body"><div class="row1"><span class="nm">'+c.name+'</span><span class="kind">'+kindTxt+'</span>'+
         '<span class="badge '+confCls(c.parse_confidence)+'"><span class="d"></span>'+c.parse_confidence+'</span>'+
         '<span style="margin-left:auto;color:var(--text-3);font-size:12px;font-family:var(--mono)">'+c.unit+' · '+(c.delivery||'')+'</span></div>'+
