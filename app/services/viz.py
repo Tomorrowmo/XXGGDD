@@ -61,6 +61,13 @@ def available(case_path: str | Path | None = None) -> bool:
     return _env_ready(case_path)
 
 
+def cached_previews(case_path: str | Path) -> dict:
+    """只读已缓存的切片（不触发渲染）—— 供列表缩略图快速取用。"""
+    out = preview_dir(case_path)
+    images = {n: f"{n}.png" for n in SLICE_NAMES if (out / f"{n}.png").exists()}
+    return {"available": bool(images), "dir": str(out), "images": images}
+
+
 def generate_previews(case_path: str | Path, scalar: str = "T", *, timeout: int = 180) -> dict:
     """为算例生成切片快照（子进程调 PostProcessTool 渲染）。
 

@@ -113,6 +113,27 @@ def case_detail(case_id: int, db: Session = Depends(get_db)):
     return brief
 
 
+@router.get("/cases/{case_id}/thumbnail")
+def case_thumbnail(case_id: int, db: Session = Depends(get_db)):
+    """列表缩略图：仅返回**已缓存**的切片（不触发渲染，保证列表加载快）。
+
+    偏好带体信息的视角（surf_a → slice_Z → 任一）；无缓存则 available=False，前端回退占位图。
+    """
+    c = db.get(Case, case_id)
+    if c is None:
+        raise HTTPException(404, "算例不存在")
+    if c.kind != CaseKind.SIMULATION:
+        return {"available": False, "reason": "仅仿真算例有切片缩略图"}
+    res = viz.cached_previews(c.storage_uri)
+    imgs = res.get("images", {})
+    if not imgs:
+        return {"available": False}
+    key = Path(res["dir"]).name
+    pick = next((n for n in ("surf_a", "slice_Z", "slice_X", "surf_b") if n in imgs),
+                next(iter(imgs)))
+    return {"available": True, "url": f"/previews/{key}/{imgs[pick]}", "which": pick}
+
+
 @router.get("/cases/{case_id}/previews")
 def case_previews(case_id: int, db: Session = Depends(get_db)):
     c = db.get(Case, case_id)

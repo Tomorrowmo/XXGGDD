@@ -1532,6 +1532,16 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
       var dw=card.querySelector('.dw-open'); if(dw) dw.addEventListener('click', function(e){ e.stopPropagation(); if(window.openDrawer) window.openDrawer(card); });
     });
     var el=document.getElementById('scope-count'); if(el) el.textContent=d.cases.length;
+    // 缩略图：仿真算例换成真实切片（仅取已缓存的，不触发渲染，保证列表快）
+    wrap.querySelectorAll('.dcard[data-goto="sim"]').forEach(function(card){
+      var cid=card.getAttribute('data-cid');
+      getJSON(API+'/cases/'+cid+'/thumbnail').then(function(t){
+        if(!t||!t.available||!t.url) return;
+        var th=card.querySelector('.cardthumb'); if(!th) return;
+        th.className='cardthumb'; th.style.background='#0e1118';
+        th.innerHTML='<img src="'+t.url+'" title="真实切片 '+(t.which||'')+'" style="width:100%;height:100%;object-fit:cover;display:block">';
+      });
+    });
     markLive();
   }
 
