@@ -9,35 +9,56 @@ import os
 
 import vtk
 
+try:  # 子进程按 `render.export_vtp` 载入用相对；app 内按包载入亦可
+    from .simagent_render import _named_blocks, _pick_body_surface
+except ImportError:  # pragma: no cover
+    from simagent_render import _named_blocks, _pick_body_surface  # type: ignore
+
+
+# 体网格 / 远场 边界：3D 交互只关心物面（弹体/壁面），排除这些否则相机框住大盒子→一片黑
+_EXCLUDE = ("internalmesh", "internal", "farfield", "freestream", "far",
+            "background", "outer", "domain", "fluid", "elem")
+
+
+def _excluded(name: str) -> bool:
+    low = (name or "").lower()
+    return any(h in low for h in _EXCLUDE)
+
 
 def export_vtp(multiblock, out_dir: str, include_internal: bool = False) -> dict:
-    """合并边界块 → 提取表面 → 写 surface.vtp + meta.json。返回 meta。"""
+    """合并**物面**块（排除体网格/远场）→ 提取表面 → 写 surface.vtp + meta.json。"""
     os.makedirs(out_dir, exist_ok=True)
-    append = vtk.vtkAppendFilter()
-    any_block = False
-    for i in range(multiblock.GetNumberOfBlocks()):
-        block = multiblock.GetBlock(i)
-        if block is None or block.IsA("vtkMultiBlockDataSet"):
-            continue
-        meta = multiblock.GetMetaData(i)
-        blk = meta.Get(vtk.vtkCompositeDataSet.NAME()) if (meta and meta.Has(vtk.vtkCompositeDataSet.NAME())) else ""
-        if not include_internal and (blk or "").lower() in ("internalmesh", "internal"):
-            continue
-        append.AddInputData(block)
-        any_block = True
-    if not any_block:  # 无独立边界块（如单块 CGNS）→ 全导
+
+    def _named():
+        out = []
         for i in range(multiblock.GetNumberOfBlocks()):
             b = multiblock.GetBlock(i)
-            if b is not None and not b.IsA("vtkMultiBlockDataSet"):
-                append.AddInputData(b); any_block = True
-    if not any_block:
-        return {"ok": False, "reason": "无可导出的块"}
-    append.Update()
+            if b is None or b.IsA("vtkMultiBlockDataSet"):
+                continue
+            meta = multiblock.GetMetaData(i)
+            nm = meta.Get(vtk.vtkCompositeDataSet.NAME()) if (meta and meta.Has(vtk.vtkCompositeDataSet.NAME())) else f"blk{i}"
+            out.append((nm, b))
+        return out
 
-    geo = vtk.vtkGeometryFilter()
-    geo.SetInputData(append.GetOutput())
-    geo.Update()
-    poly = geo.GetOutput()
+    # 合并所有边界块（排除体网格/远场，避免相机框住大盒子），提表面。
+    # 内流(燃烧室)要保留全部壁面→合并；外流(弹体)排除远场后即物面。
+    named = _named()
+    kept = [b for nm, b in named if not (_excluded(nm) and not include_internal)]
+    poly = None
+    if kept:
+        append = vtk.vtkAppendFilter()
+        for b in kept:
+            append.AddInputData(b)
+        append.Update()
+        geo = vtk.vtkGeometryFilter(); geo.SetInputData(append.GetOutput()); geo.Update()
+        poly = geo.GetOutput()
+    if poly is None or poly.GetNumberOfPoints() == 0:   # 全被排除/空 → 退回物面选取
+        try:
+            poly = _pick_body_surface(_named_blocks(multiblock))
+        except Exception:  # noqa: BLE001
+            poly = None
+    if poly is None or poly.GetNumberOfPoints() == 0:
+        return {"ok": False, "reason": "无可导出的物面块"}
     n_points = poly.GetNumberOfPoints()
     n_cells = poly.GetNumberOfCells()
     if n_points == 0:
