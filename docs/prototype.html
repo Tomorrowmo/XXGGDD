@@ -367,14 +367,12 @@
   /* 可扩展多选器（搜索+分组+滚动） */
   .msel2{border:1px solid var(--border);border-radius:10px;background:var(--surface);overflow:hidden;margin-top:2px}
   .msbar{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--border);background:var(--surface-2)}
-  .mssearch{flex:1;max-width:280px;font-size:12.5px;background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:6px 10px;color:var(--text)}
+  .msop{background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:5px 8px;color:var(--text);max-width:220px}
+  .mssearch{width:140px;font-size:12.5px;background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:6px 10px;color:var(--text)}
   .mscount{font-size:11.5px;color:var(--text-3);font-family:var(--mono)}
-  .msbody{max-height:230px;overflow-y:auto;padding:4px}
-  .msgrp.hide,.msrow.hide{display:none}
-  .msghd{display:flex;align-items:center;gap:8px;padding:6px 8px;font-size:11.5px;color:var(--text-3);text-transform:uppercase;letter-spacing:.04em;position:sticky;top:0;background:var(--surface);cursor:pointer}
-  .msghd em{font-style:normal;font-family:var(--mono)}
-  .msghd input{accent-color:var(--accent)}
-  .msrow{display:flex;align-items:center;gap:9px;padding:6px 10px 6px 22px;font-size:12.5px;color:var(--text-2);cursor:pointer;border-radius:7px}
+  .msbody{max-height:240px;overflow-y:auto;padding:5px}
+  .msrow.hide{display:none}
+  .msrow{display:flex;align-items:center;gap:9px;padding:7px 10px;font-size:12.5px;color:var(--text-2);cursor:pointer;border-radius:7px}
   .msrow:hover{background:var(--surface-2)}
   .msrow:has(input:checked){background:color-mix(in srgb,var(--accent) 8%,transparent)}
   .msrow input{accent-color:var(--accent);cursor:pointer}
@@ -2147,33 +2145,41 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
     var best=[]; Object.keys(g).forEach(function(op){ if(g[op].length>best.length) best=g[op]; });
     return best.length>=2?best:list.map(function(c){return c.id;});
   }
-  // 可扩展多选：搜索 + 按工况分组 + 可滚动 + 组内全选 + 计数（算例多也不乱）
+  // 可扩展多选：工况下拉 → 只展开该工况的车次/算例，搜索 + 可滚动 + 全选 + 计数
   function selBox(list, picked, prefix){
     var groups={}; list.forEach(function(c){ var op=(c.operating_point&&c.operating_point!=='__UNALIGNED__')?c.operating_point:'（未对齐）'; (groups[op]=groups[op]||[]).push(c); });
-    var ops=Object.keys(groups).sort();
+    var ops=Object.keys(groups).sort(function(a,b){ return groups[b].length-groups[a].length || a.localeCompare(b); });
+    var defOp=ops[0];
     function sub(c){ return c.kind==='simulation'
       ? (c.context&&c.context.mesh_cells?(fmtCells(c.context.mesh_cells)+' · y+'+(c.context.y_plus||'—')):(c.source_format||''))
       : ((c.context&&c.context.channels?c.context.channels+' 通道':'')); }
     var body=ops.map(function(op){
-      var rows=groups[op].map(function(c){ var on=picked.indexOf(c.id)>=0?' checked':'';
+      var rows=groups[op].map(function(c){ var on=(op===defOp && picked.indexOf(c.id)>=0)?' checked':'';
         return '<label class="msrow" data-q="'+(c.name+' '+c.unit).toLowerCase()+'"><input type="checkbox" class="'+prefix+'-ck" value="'+c.id+'"'+on+'><span class="nm">'+c.name+'</span><span class="u">'+c.unit+'</span><span class="s">'+sub(c)+'</span></label>';
       }).join('');
-      return '<div class="msgrp"><label class="msghd"><input type="checkbox" class="msgck"><span>工况 '+op+'</span><em>'+groups[op].length+'</em></label>'+rows+'</div>';
+      return '<div class="msgrp" data-op="'+op+'"'+(op===defOp?'':' style="display:none"')+'>'+rows+'</div>';
     }).join('');
-    return '<div class="msel2" data-prefix="'+prefix+'"><div class="msbar"><input class="mssearch" placeholder="🔍 搜索算例 / 单位"><span class="spacer"></span><span class="mscount"></span><button type="button" class="chip msall">全选</button><button type="button" class="chip msnone">清空</button></div><div class="msbody">'+body+'</div></div>';
+    var opts=ops.map(function(op){ return '<option value="'+op+'"'+(op===defOp?' selected':'')+'>工况 '+op+'（'+groups[op].length+'）</option>'; }).join('');
+    return '<div class="msel2" data-prefix="'+prefix+'"><div class="msbar"><select class="msop model-pick" style="font-size:12.5px">'+opts+'</select><input class="mssearch" placeholder="🔍 搜索"><span class="spacer"></span><span class="mscount"></span><button type="button" class="chip msall">全选</button><button type="button" class="chip msnone">清空</button></div><div class="msbody">'+body+'</div></div>';
   }
   function bindMsel(root, prefix){
     var box=(root||document).querySelector('.msel2[data-prefix="'+prefix+'"]'); if(!box) return;
-    function allck(){ return Array.prototype.slice.call(box.querySelectorAll('.'+prefix+'-ck')); }
+    function curOp(){ var s=box.querySelector('.msop'); return s?s.value:null; }
+    function grp(){ return box.querySelector('.msgrp[data-op="'+curOp()+'"]'); }
+    function curCk(){ var g=grp(); return g?Array.prototype.slice.call(g.querySelectorAll('.'+prefix+'-ck')):[]; }
     function vis(ck){ return !ck.closest('.msrow').classList.contains('hide'); }
-    function upd(){ var n=box.querySelectorAll('.'+prefix+'-ck:checked').length; box.querySelector('.mscount').textContent='已选 '+n+' / '+allck().length;
-      box.querySelectorAll('.msgrp').forEach(function(g){ var cks=g.querySelectorAll('.'+prefix+'-ck'), c=g.querySelectorAll('.'+prefix+'-ck:checked').length, gck=g.querySelector('.msgck'); gck.checked=c===cks.length&&c>0; gck.indeterminate=c>0&&c<cks.length; }); }
-    box.addEventListener('change', function(e){ if(e.target.classList.contains('msgck')){ e.target.closest('.msgrp').querySelectorAll('.'+prefix+'-ck').forEach(function(ck){ if(vis(ck)) ck.checked=e.target.checked; }); } upd(); });
-    box.querySelector('.msall').addEventListener('click', function(){ allck().forEach(function(ck){ if(vis(ck)) ck.checked=true; }); upd(); });
-    box.querySelector('.msnone').addEventListener('click', function(){ allck().forEach(function(ck){ ck.checked=false; }); upd(); });
-    box.querySelector('.mssearch').addEventListener('input', function(){ var q=this.value.trim().toLowerCase();
-      box.querySelectorAll('.msrow').forEach(function(r){ r.classList.toggle('hide', !!q && r.getAttribute('data-q').indexOf(q)<0); });
-      box.querySelectorAll('.msgrp').forEach(function(g){ g.classList.toggle('hide', g.querySelectorAll('.msrow:not(.hide)').length===0); }); });
+    function upd(){ var g=grp(); if(!g) return; var n=g.querySelectorAll('.'+prefix+'-ck:checked').length, t=g.querySelectorAll('.'+prefix+'-ck').length; box.querySelector('.mscount').textContent='已选 '+n+' / '+t; }
+    var sop=box.querySelector('.msop');
+    if(sop) sop.addEventListener('change', function(){
+      box.querySelectorAll('.msgrp').forEach(function(g){ var on=g.getAttribute('data-op')===curOp(); g.style.display=on?'':'none';
+        if(!on) g.querySelectorAll('.'+prefix+'-ck').forEach(function(ck){ ck.checked=false; }); });   // 切工况清掉其它工况的勾选
+      box.querySelector('.mssearch').value=''; box.querySelectorAll('.msrow').forEach(function(r){ r.classList.remove('hide'); }); upd();
+    });
+    box.addEventListener('change', function(e){ if(e.target.classList.contains(prefix+'-ck')) upd(); });
+    box.querySelector('.msall').addEventListener('click', function(){ curCk().forEach(function(ck){ if(vis(ck)) ck.checked=true; }); upd(); });
+    box.querySelector('.msnone').addEventListener('click', function(){ curCk().forEach(function(ck){ ck.checked=false; }); upd(); });
+    box.querySelector('.mssearch').addEventListener('input', function(){ var q=this.value.trim().toLowerCase(); var g=grp(); if(!g) return;
+      g.querySelectorAll('.msrow').forEach(function(r){ r.classList.toggle('hide', !!q && r.getAttribute('data-q').indexOf(q)<0); }); });
     upd();
   }
   function pickedIds(prefix){
