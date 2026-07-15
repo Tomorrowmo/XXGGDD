@@ -1570,8 +1570,12 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
 
   async function liveCases(){
     const d=await getJSON(API+'/cases');
-    if(!d||!d.cases||!d.cases.length) return;
+    if(!d) return;   // API 不可达（离线/artifact）→ 保留静态演示卡优雅降级
     const wrap=document.getElementById('lib-cards'); if(!wrap) return;
+    if(!d.cases||!d.cases.length){   // 已接后端但库为空 → 清掉演示卡，显空状态（否则写死的 mock 卡会残留）
+      wrap.innerHTML='<div class="placeholder" style="margin:8px 0;padding:34px;text-align:center">暂无入库数据。点左上「＋ 批量入库」添加算例 / 车次。</div>';
+      var ec=document.getElementById('scope-count'); if(ec) ec.textContent=0; markLive(); return;
+    }
     wrap.innerHTML=d.cases.map(function(c){
       var kindTxt=c.kind==='experiment'?'实验 · txt':'仿真 · '+(c.source_format||'');
       var meta=['工况 <b>'+(c.operating_point||'—')+'</b>'];

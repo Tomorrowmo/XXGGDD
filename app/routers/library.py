@@ -197,6 +197,7 @@ def delete_case(case_id: int, db: Session = Depends(get_db)):
             shutil.rmtree(pdir, ignore_errors=True)
     except Exception:  # noqa: BLE001
         pass
+    delivery = db.get(Delivery, c.delivery_id)
     db.delete(c)          # cascade: measurements + op_links
     db.flush()
     # 清理无算例关联的孤儿工况
@@ -204,6 +205,17 @@ def delete_case(case_id: int, db: Session = Depends(get_db)):
         op = db.get(OperatingPoint, oid)
         if op is not None and not op.links:
             db.delete(op)
+    # 清理变空的交付批次与单位（删到最后不残留一堆空单位）
+    if delivery is not None:
+        db.flush()
+        if not db.execute(select(Case.id).where(Case.delivery_id == delivery.id)).first():
+            unit_id = delivery.unit_id
+            db.delete(delivery)
+            db.flush()
+            if not db.execute(select(Delivery.id).where(Delivery.unit_id == unit_id)).first():
+                u = db.get(Unit, unit_id)
+                if u is not None:
+                    db.delete(u)
     db.commit()
     return {"ok": True, "deleted": name, "note": "已删库内记录与预览缓存；原始文件未改动"}
 
