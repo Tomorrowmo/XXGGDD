@@ -20,7 +20,8 @@ from app.services import experiment as exp_svc
 from app.services import viz
 
 
-SIM_EXTS = {".h5", ".cas", ".dat", ".foam", ".cgns"}
+# 注意：Fluent 传统二进制 .cas/.dat（非 HDF5）不受支持——需在 Fluent 导出为 .cas.h5/.dat.h5 或 .cgns
+SIM_EXTS = {".h5", ".foam", ".cgns"}
 EXP_EXTS = {".txt", ".csv"}
 
 
@@ -32,10 +33,27 @@ def sha256_file(path: Path, chunk: int = 1 << 20) -> str:
     return h.hexdigest()
 
 
+def _is_openfoam_dir(path: Path) -> bool:
+    return (path / "system" / "controlDict").exists() or bool(list(path.glob("*.foam")))
+
+
+def _sim_file_in_dir(path: Path) -> Path | None:
+    """目录内的主仿真文件：CGNS 优先，其次 Fluent HDF5(.cas.h5)。找不到返回 None。"""
+    cgns = sorted(path.glob("*.cgns"))
+    if cgns:
+        return cgns[0]
+    cas = sorted(path.glob("*.cas.h5"))
+    dat = sorted(path.glob("*.dat.h5"))
+    if cas and dat:
+        return cas[0]
+    return None
+
+
 def detect_kind(path: Path) -> CaseKind | None:
     if path.is_dir():
-        # OpenFOAM 算例目录：含 system/controlDict 或 *.foam
-        if (path / "system" / "controlDict").exists() or any(path.glob("*.foam")):
+        if _is_openfoam_dir(path):                 # OpenFOAM 算例目录
+            return CaseKind.SIMULATION
+        if _sim_file_in_dir(path) is not None:     # 目录内含 CGNS / Fluent HDF5
             return CaseKind.SIMULATION
         return None
     ext = path.suffix.lower()
@@ -44,6 +62,39 @@ def detect_kind(path: Path) -> CaseKind | None:
     if ext in SIM_EXTS or path.name.endswith((".cas.h5", ".dat.h5")):
         return CaseKind.SIMULATION
     return None
+
+
+def resolve_case_path(path: Path) -> Path:
+    """把仿真"目录"解析到实际可解析对象：OpenFOAM 用目录本身；含 CGNS/Fluent HDF5 的目录 → 该文件。"""
+    if path.is_dir() and not _is_openfoam_dir(path):
+        f = _sim_file_in_dir(path)
+        if f is not None:
+            return f
+    return path
+
+
+_SUPPORTED_HINT = ("支持格式：OpenFOAM 目录(含 system/controlDict)、CGNS(.cgns)、"
+                   "Fluent HDF5(.cas.h5 + .dat.h5)、试验数据(.txt/.csv)")
+
+
+def unsupported_reason(path: Path) -> str:
+    """给出"为什么不支持"的具体说明——列出目录内实际扩展名 + 支持清单 + Fluent 传统格式提示。"""
+    if path.is_dir():
+        exts = sorted({p.suffix.lower() for p in path.iterdir() if p.is_file()})
+        has_legacy = any(e in (".cas", ".dat") for e in exts)
+        subdirs = [p.name for p in path.iterdir() if p.is_dir()]
+        detail = f"目录直接包含文件类型：{', '.join(exts) if exts else '（无文件，仅子目录：' + ', '.join(subdirs[:5]) + '）'}"
+        tips = []
+        if has_legacy:
+            tips.append("检测到 Fluent 传统 .cas/.dat（二进制，非 HDF5）——请在 Fluent 里 File→Export 导出为 .cas.h5/.dat.h5 或 .cgns")
+        if subdirs and not exts:
+            tips.append("看起来是含子目录的父目录——若里面是多个算例，请勾选『批量目录扫描』；若是单个算例，请把路径指到含算例文件的子目录")
+        return f"未识别为可入库算例。{detail}。{_SUPPORTED_HINT}。" + ("；".join(tips) and ("提示：" + "；".join(tips)))
+    ext = path.suffix.lower() or "（无扩展名）"
+    tip = ""
+    if ext in (".cas", ".dat"):
+        tip = "。Fluent 传统 .cas/.dat 为二进制格式不支持，请导出为 .cas.h5/.dat.h5 或 .cgns"
+    return f"文件类型 {ext} 不支持。{_SUPPORTED_HINT}{tip}"
 
 
 def _content_hash(path: Path) -> str:
@@ -111,11 +162,22 @@ def ingest_steps(db: Session, path: str | Path, *, unit_name: str,
     yield step("detect", "run", "识别数据类型")
     kind = detect_kind(path)
     if kind is None:
-        yield step("detect", "fail", "不支持的类型")
-        yield ("result", {"ok": False, "reason": "不支持的类型", "path": str(path)})
+        reason = unsupported_reason(path)
+        yield step("detect", "fail", reason)
+        yield ("result", {"ok": False, "reason": reason, "path": str(path)})
         return
-    kind_txt = ("仿真算例·" + ("openfoam" if path.is_dir() else "hdf5/cgns")) \
-        if kind == CaseKind.SIMULATION else "试验数据·txt/csv"
+    # 仿真"目录"解析到实际文件（含 CGNS / Fluent HDF5 的文件夹 → 该文件；OpenFOAM 仍用目录）
+    src_name = path.name if path.is_dir() else path.stem
+    if kind == CaseKind.SIMULATION:
+        resolved = resolve_case_path(path)
+        if resolved != path:
+            src_name = resolved.stem
+        path = resolved
+    is_of = path.is_dir()
+    sfmt = ("openfoam" if is_of else
+            ("cgns" if path.suffix.lower() == ".cgns" else "fluent-hdf5")) \
+        if kind == CaseKind.SIMULATION else "txt-experiment"
+    kind_txt = ("仿真算例 · " + sfmt) if kind == CaseKind.SIMULATION else "试验数据 · txt/csv"
     yield step("detect", "ok", kind_txt)
 
     yield step("dedup", "run", "SHA-256 去重")
@@ -129,10 +191,8 @@ def ingest_steps(db: Session, path: str | Path, *, unit_name: str,
 
     unit = _get_or_create_unit(db, unit_name)
     delivery = _get_or_create_delivery(db, unit, delivery_label)
-    sfmt = ("openfoam" if path.is_dir() else "fluent-hdf5") \
-        if kind == CaseKind.SIMULATION else "txt-experiment"
     case = Case(
-        delivery_id=delivery.id, kind=kind, name=path.name if path.is_dir() else path.stem,
+        delivery_id=delivery.id, kind=kind, name=src_name,
         source_format=sfmt, storage_uri=str(path.resolve()), content_hash=chash,
         parse_status=ParseStatus.PENDING, parse_confidence=Confidence.PENDING,
     )
