@@ -261,3 +261,101 @@ def _render_with_body(streamtube, body_surf, scalar, out_path, w, h, *, focal, h
     w2i = vtk.vtkWindowToImageFilter(); w2i.SetInput(win); w2i.SetInputBufferTypeToRGB(); w2i.ReadFrontBufferOff(); w2i.Update()
     writer = vtk.vtkPNGWriter(); writer.SetFileName(out_path); writer.SetInputConnection(w2i.GetOutputPort()); writer.Write()
     win.Finalize()
+
+
+# --------------------------------------------------------------------------- 缩略图（能看出是什么模型）
+_BODY_HINT = ("wall", "solid", "body", "aircraft", "missile", "wing", "blade",
+              "hull", "skin", "surface", "geom")
+_FAR_HINT = ("far", "freestream", "inlet", "outlet", "internal", "interior",
+             "volume", "fluid", "domain", "symmetry", "elem", "background")
+
+
+def _pick_body_surface(blocks):
+    """挑最能代表模型的表面。
+
+    - 有明确"物面"命名(wall/solid/body…)：取其中**面片最多**者（主壁面/主体，
+      如燃烧室取整段壁面而非细小进出口环）；
+    - 无命名线索：取**最紧凑**(包围盒最小)的非远场块（外流场里的弹体，如导弹）。
+    远场/体网格(far/internal/elem…)一律排除。"""
+    cands = []
+    for name, b in blocks:
+        surf = _surface(b)
+        n = surf.GetNumberOfPoints()
+        if n < 30:
+            continue
+        bb = surf.GetBounds()
+        diag = ((bb[1] - bb[0]) ** 2 + (bb[3] - bb[2]) ** 2 + (bb[5] - bb[4]) ** 2) ** 0.5
+        low = (name or "").lower()
+        cands.append({"surf": surf, "n": n, "cells": surf.GetNumberOfCells(), "diag": diag,
+                      "body": any(h in low for h in _BODY_HINT),
+                      "far": any(h in low for h in _FAR_HINT)})
+    if not cands:
+        return None
+    named = [c for c in cands if c["body"] and not c["far"]]
+    if named:                                   # 有物面命名 → 取面最多的主壁面
+        named.sort(key=lambda c: -c["cells"])
+        return named[0]["surf"]
+    pool = [c for c in cands if not c["far"]] or cands   # 无命名 → 取最紧凑的非远场块
+    pool.sort(key=lambda c: (round(c["diag"], 3), c["n"]))
+    return pool[0]["surf"]
+
+
+def render_thumbnail(multiblock, out_path, w=384, h=384):
+    """生成一张"能认出模型外形"的缩略图：隔离弹体表面 → 明暗着色 → 3/4 视角紧凑取景。
+
+    方形输出，供列表 54px 方形缩略图无损裁切。返回是否成功。
+    """
+    blocks = _named_blocks(multiblock)
+    if not blocks:
+        return False
+    body = _pick_body_surface(blocks)
+    if body is None or body.GetNumberOfPoints() == 0:
+        return False
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    norm = vtk.vtkPolyDataNormals()
+    norm.SetInputData(body)
+    norm.SetFeatureAngle(60)
+    norm.SplittingOff()
+    norm.ConsistencyOn()
+    norm.Update()
+
+    mapper = vtk.vtkPolyDataMapper()
+    mapper.SetInputData(norm.GetOutput())
+    mapper.ScalarVisibilityOff()
+    actor = vtk.vtkActor()
+    actor.SetMapper(mapper)
+    p = actor.GetProperty()
+    p.SetColor(0.62, 0.74, 0.94)
+    p.SetAmbient(0.30); p.SetDiffuse(0.85); p.SetSpecular(0.30); p.SetSpecularPower(24)
+
+    ren = vtk.vtkRenderer()
+    ren.AddActor(actor)
+    ren.GradientBackgroundOn()
+    ren.SetBackground(0.055, 0.065, 0.095)   # 底部深
+    ren.SetBackground2(0.13, 0.15, 0.21)     # 顶部亮（微渐变，更有质感）
+
+    win = vtk.vtkRenderWindow()
+    win.SetOffScreenRendering(1)
+    win.SetSize(w, h)
+    win.AddRenderer(ren)
+
+    cam = ren.GetActiveCamera()
+    cam.SetViewUp(0, 0, 1)
+    ren.ResetCamera()                        # 紧贴模型取景
+    cam.Azimuth(-45)
+    cam.Elevation(20)
+    ren.ResetCameraClippingRange()
+    cam.Zoom(1.4)
+    win.Render()
+
+    w2i = vtk.vtkWindowToImageFilter()
+    w2i.SetInput(win)
+    w2i.SetInputBufferTypeToRGB()
+    w2i.ReadFrontBufferOff()
+    w2i.Update()
+    writer = vtk.vtkPNGWriter()
+    writer.SetFileName(out_path)
+    writer.SetInputConnection(w2i.GetOutputPort())
+    writer.Write()
+    win.Finalize()
+    return True

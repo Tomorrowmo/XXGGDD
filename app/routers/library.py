@@ -153,11 +153,15 @@ def case_thumbnail(case_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "算例不存在")
     if c.kind != CaseKind.SIMULATION:
         return {"available": False, "reason": "仅仿真算例有切片缩略图"}
+    pdir = Path(viz.preview_dir(c.storage_uri))
+    key = pdir.name
+    # 专用缩略图（能认出模型外形）优先
+    if (pdir / "thumb.png").exists():
+        return {"available": True, "url": f"/previews/{key}/thumb.png", "which": "thumb"}
     res = viz.cached_previews(c.storage_uri)
     imgs = res.get("images", {})
     if not imgs:
         return {"available": False}
-    key = Path(res["dir"]).name
     pick = next((n for n in ("surf_a", "slice_Z", "slice_X", "surf_b") if n in imgs),
                 next(iter(imgs)))
     return {"available": True, "url": f"/previews/{key}/{imgs[pick]}", "which": pick}

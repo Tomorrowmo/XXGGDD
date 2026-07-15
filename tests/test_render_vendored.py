@@ -40,6 +40,35 @@ def test_vendored_modules_importable():
     assert hasattr(simagent_render, "render_case")
 
 
+def _two_block_mb():
+    """构造 {wall:球, farfield:大盒} 多块，用于测缩略图体选取。"""
+    vtk = pytest.importorskip("vtk")
+    sph = vtk.vtkSphereSource(); sph.SetRadius(1.0); sph.Update()
+    box = vtk.vtkCubeSource(); box.SetXLength(20); box.SetYLength(20); box.SetZLength(20); box.Update()
+    mb = vtk.vtkMultiBlockDataSet()
+    mb.SetBlock(0, box.GetOutput()); mb.GetMetaData(0).Set(vtk.vtkCompositeDataSet.NAME(), "farfield")
+    mb.SetBlock(1, sph.GetOutput()); mb.GetMetaData(1).Set(vtk.vtkCompositeDataSet.NAME(), "wall")
+    return mb
+
+
+def test_pick_body_prefers_named_not_farfield():
+    pytest.importorskip("vtk")
+    from app.services.render import simagent_render as SR
+    surf = SR._pick_body_surface(SR._named_blocks(_two_block_mb()))
+    assert surf is not None
+    # 选中的应是 wall(球, 紧凑) 而非 farfield(大盒)
+    bb = surf.GetBounds()
+    assert (bb[1] - bb[0]) < 5    # 球直径 ~2，远小于盒子 20
+
+
+def test_render_thumbnail_png(tmp_path):
+    pytest.importorskip("vtk")
+    from app.services.render import simagent_render as SR
+    out = tmp_path / "thumb.png"
+    assert SR.render_thumbnail(_two_block_mb(), str(out)) is True
+    assert out.stat().st_size > 1000
+
+
 @pytest.mark.skipif(not _CASE_DIR.exists(), reason="DLR 测试算例不可用")
 def test_end_to_end_vendored_engine(tmp_path, monkeypatch):
     # 端到端：真出图，且引擎标记为 vendored（证明没走 SimGraph2/Romtek）

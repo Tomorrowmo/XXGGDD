@@ -101,12 +101,29 @@ def _render_openfoam(case_path: str, out_dir: str, scalar: str) -> dict:
     for sc in _scalar_candidates(mb, scalar):
         try:
             SR.render_case(mb, sc, out_dir)
+            _make_thumb(SR, mb, out_dir)
             imgs = sorted(os.path.basename(p) for p in glob.glob(os.path.join(out_dir, "*.png")))
             if imgs:
                 return {"ok": True, "scalar": sc, "images": imgs, "engine": "vendored-vtk"}
         except Exception:
             continue
     return {"ok": False, "error": "渲染未产出图像", "engine": "vendored-vtk"}
+
+
+def _make_thumb(vendored_sr, mb, out_dir) -> None:
+    """生成 thumb.png（能认出模型外形）。失败静默——切片本身已产出。"""
+    try:
+        vendored_sr.render_thumbnail(mb, os.path.join(out_dir, "thumb.png"))
+    except Exception:
+        pass
+
+
+def _vendored_render():
+    here = os.path.dirname(os.path.abspath(__file__))
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    from render import simagent_render as VSR  # type: ignore
+    return VSR
 
 
 def _render_via_simgraph2(case_path: str, out_dir: str, scalar: str) -> dict:
@@ -131,9 +148,11 @@ def _render_via_simgraph2(case_path: str, out_dir: str, scalar: str) -> dict:
         if isinstance(r, dict) and r.get("error"):
             return {"ok": False, "error": r["error"]}
         mb = eng.session_mgr.get(sid).post_data.get_vtk_data()
+        vsr = _vendored_render()  # 缩略图用平台自有渲染（与加载引擎无关）
         for sc in _scalar_candidates(mb, scalar):
             try:
                 SR.render_case(mb, sc, out_dir)
+                _make_thumb(vsr, mb, out_dir)
                 imgs = sorted(os.path.basename(p) for p in glob.glob(os.path.join(out_dir, "*.png")))
                 if imgs:
                     return {"ok": True, "scalar": sc, "images": imgs, "engine": "simgraph2-romtek"}
