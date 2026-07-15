@@ -12,11 +12,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import (
-    Unit, Delivery, Case, Measurement, Quantity,
+    Unit, Delivery, Case, Measurement, Quantity, OperatingPoint,
     CaseKind, ParseStatus, Confidence,
 )
 from app.services import simparse_adapter, operating_point as op_svc
 from app.services import experiment as exp_svc
+from app.services import viz
 
 
 SIM_EXTS = {".h5", ".cas", ".dat", ".foam", ".cgns"}
@@ -84,35 +85,62 @@ def _get_or_create_quantity(db: Session, key: str, name: str, unit_dim: str) -> 
 def ingest_file(db: Session, path: str | Path, *, unit_name: str,
                 delivery_label: str, note: str | None = None) -> dict:
     """入库单个文件（幂等：content_hash 去重）。返回入库结果。"""
+    result: dict = {"ok": False, "reason": "未知"}
+    for kind_, payload in ingest_steps(db, path, unit_name=unit_name,
+                                       delivery_label=delivery_label, with_slices=False):
+        if kind_ == "result":
+            result = payload
+    return result
+
+
+# 入库步骤事件流：yields ("step", {...}) 供进度展示，最后 yields ("result", {...})。
+# 同一套逻辑既供同步 ingest_file，又供流式端点（见 routers/library）。
+def ingest_steps(db: Session, path: str | Path, *, unit_name: str,
+                 delivery_label: str, with_slices: bool = False):
+    def step(key, status, detail=None):
+        ev = {"step": key, "status": status}
+        if detail is not None:
+            ev["detail"] = detail
+        return ("step", ev)
+
     path = Path(path)
     if not path.exists():
-        return {"ok": False, "reason": "文件不存在", "path": str(path)}
+        yield ("result", {"ok": False, "reason": "文件不存在", "path": str(path)})
+        return
+
+    yield step("detect", "run", "识别数据类型")
     kind = detect_kind(path)
     if kind is None:
-        return {"ok": False, "reason": "不支持的类型", "path": str(path)}
+        yield step("detect", "fail", "不支持的类型")
+        yield ("result", {"ok": False, "reason": "不支持的类型", "path": str(path)})
+        return
+    kind_txt = ("仿真算例·" + ("openfoam" if path.is_dir() else "hdf5/cgns")) \
+        if kind == CaseKind.SIMULATION else "试验数据·txt/csv"
+    yield step("detect", "ok", kind_txt)
 
+    yield step("dedup", "run", "SHA-256 去重")
     chash = _content_hash(path)
     dup = db.execute(select(Case).where(Case.content_hash == chash)).scalar_one_or_none()
     if dup is not None:
-        return {"ok": True, "deduped": True, "case_id": dup.id, "name": dup.name}
+        yield step("dedup", "ok", "已存在，去重跳过")
+        yield ("result", {"ok": True, "deduped": True, "case_id": dup.id, "name": dup.name})
+        return
+    yield step("dedup", "ok", "新数据")
 
     unit = _get_or_create_unit(db, unit_name)
     delivery = _get_or_create_delivery(db, unit, delivery_label)
-
-    if kind == CaseKind.SIMULATION:
-        sfmt = "openfoam" if path.is_dir() else "fluent-hdf5"
-    else:
-        sfmt = "txt-experiment"
+    sfmt = ("openfoam" if path.is_dir() else "fluent-hdf5") \
+        if kind == CaseKind.SIMULATION else "txt-experiment"
     case = Case(
         delivery_id=delivery.id, kind=kind, name=path.name if path.is_dir() else path.stem,
-        source_format=sfmt,
-        storage_uri=str(path.resolve()), content_hash=chash,
+        source_format=sfmt, storage_uri=str(path.resolve()), content_hash=chash,
         parse_status=ParseStatus.PENDING, parse_confidence=Confidence.PENDING,
     )
     db.add(case); db.flush()
 
-    # 解析 + 工况对齐 + 关键量
+    yield step("parse", "run", "解析 + 提取关键量")
     op_params: dict | None = None
+    n_meas = 0
     try:
         if kind == CaseKind.SIMULATION:
             summ = simparse_adapter.summary(str(path))
@@ -120,10 +148,11 @@ def ingest_file(db: Session, path: str | Path, *, unit_name: str,
             case.parse_status = ParseStatus.PARSED if summ.get("available") else ParseStatus.FAILED
             case.parse_confidence = Confidence.HIGH if summ.get("available") else Confidence.PENDING
             op_params = (case.context or {}).get("operating_point") if case.context else None
-            # 仿真 QOI → 测量（供对比评估）
             qres = simparse_adapter.qoi(str(path))
             if qres.get("available"):
-                _write_sim_measurements(db, case, qres.get("qoi") or [])
+                n_meas = _write_sim_measurements(db, case, qres.get("qoi") or [])
+            yield step("parse", "ok" if summ.get("available") else "fail",
+                       f"simparse · {n_meas} 项 QOI")
         else:
             parsed = exp_svc.read_experiment(path)
             phases = exp_svc.segment_phases(parsed)
@@ -131,21 +160,46 @@ def ingest_file(db: Session, path: str | Path, *, unit_name: str,
             case.context = {"n_rows": parsed.n_rows, "channels": len(parsed.channels)}
             case.parse_status = ParseStatus.PARSED
             case.parse_confidence = Confidence.HIGH
-            _write_experiment_measurements(db, case, steady)
+            n_meas = _write_experiment_measurements(db, case, steady)
+            yield step("parse", "ok", f"{len(parsed.channels)} 通道 · {n_meas} 稳态关键量")
     except Exception as e:  # noqa: BLE001
         case.parse_status = ParseStatus.FAILED
         case.context = {"error": str(e)}
+        yield step("parse", "fail", str(e)[:80])
 
+    yield step("align", "run", "工况对齐")
     link = op_svc.align_case(db, case, op_params)
     db.commit()
-    return {"ok": True, "deduped": False, "case_id": case.id, "name": case.name,
-            "kind": kind.value, "parse_status": case.parse_status.value,
-            "op_link": {"method": link.method.value,
-                        "confidence": link.mapping_confidence.value}}
+    op_key = None
+    if link.op_id:
+        op = db.get(OperatingPoint, link.op_id)
+        op_key = op.canonical_key if op else None
+    conf = link.mapping_confidence.value
+    yield step("align", "ok",
+               (op_key if op_key and op_key != "__UNALIGNED__" else "待人工对齐") + f" · {conf}")
+
+    yield step("write", "ok", f"写入 {n_meas} 条测量")
+
+    if with_slices and kind == CaseKind.SIMULATION:
+        yield step("slice", "run", "生成多方向切片")
+        try:
+            pv = viz.generate_previews(str(path))
+            if pv.get("available"):
+                yield step("slice", "ok", f"{len(pv.get('images', {}))} 图 · {pv.get('engine', '')}")
+            else:
+                yield step("slice", "skip", pv.get("reason", "该格式暂不支持渲染"))
+        except Exception as e:  # noqa: BLE001
+            yield step("slice", "skip", str(e)[:80])
+
+    yield ("result", {"ok": True, "deduped": False, "case_id": case.id, "name": case.name,
+                      "kind": kind.value, "parse_status": case.parse_status.value,
+                      "n_measurements": n_meas, "operating_point": op_key,
+                      "op_link": {"method": link.method.value, "confidence": conf}})
 
 
-def _write_sim_measurements(db: Session, case: Case, qoi_list: list) -> None:
-    """把 simparse QOI 写成仿真测量（防御式，兼容 dict/对象、多种字段名）。"""
+def _write_sim_measurements(db: Session, case: Case, qoi_list: list) -> int:
+    """把 simparse QOI 写成仿真测量（防御式，兼容 dict/对象、多种字段名）。返回写入条数。"""
+    n = 0
     for item in qoi_list:
         def g(*keys, default=None):
             for k in keys:
@@ -174,11 +228,14 @@ def _write_sim_measurements(db: Session, case: Case, qoi_list: list) -> None:
             confidence=conf, evidence={"source": "simparse.qoi",
                                        "reference": g("reference", "evidence")},
         ))
+        n += 1
     db.flush()
+    return n
 
 
-def _write_experiment_measurements(db: Session, case: Case, steady_qoi: list[dict]) -> None:
-    """把试验稳态关键量写成 Measurement（实验真值来源）。"""
+def _write_experiment_measurements(db: Session, case: Case, steady_qoi: list[dict]) -> int:
+    """把试验稳态关键量写成 Measurement（实验真值来源）。返回写入条数。"""
+    n = 0
     for item in steady_qoi:
         q = _get_or_create_quantity(db, key=item["channel"], name=item["quantity"],
                                     unit_dim=item["unit"])
@@ -189,7 +246,9 @@ def _write_experiment_measurements(db: Session, case: Case, steady_qoi: list[dic
             confidence=Confidence.HIGH,
             evidence={"method": item["method"], "category": item.get("category")},
         ))
+        n += 1
     db.flush()
+    return n
 
 
 def ingest_directory(db: Session, directory: str | Path, *, unit_name: str,

@@ -369,6 +369,12 @@
   .mchip:has(input:checked){border-color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,var(--surface))}
   .mchip input{accent-color:var(--accent);cursor:pointer}
   .mchip b{color:var(--text);font-weight:600}
+  .ing-step{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:5px 2px;color:var(--text-2)}
+  .ing-step b{color:var(--text);font-weight:600;min-width:120px}
+  .ing-step .ing-ic{width:16px;display:inline-flex;justify-content:center}
+  .ing-step .ing-det{color:var(--text-3);font-size:11.5px}
+  .ing-spin{width:11px;height:11px;border:2px solid var(--border-strong);border-top-color:var(--accent);border-radius:50%;display:inline-block;animation:ing-rot .7s linear infinite}
+  @keyframes ing-rot{to{transform:rotate(360deg)}}
 
   /* ============ CHAT ============ */
   .chat{display:grid;grid-template-columns:230px 1fr;gap:0;height:100%;width:100%;border:1px solid var(--border);border-radius:var(--r);overflow:hidden;background:var(--surface)}
@@ -1709,18 +1715,40 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
       var msg=document.getElementById('ing-msg'), rd=document.getElementById('ing-result');
       if(!unit||!path){ msg.textContent='请填单位和路径'; msg.style.color='var(--crit)'; return; }
       msg.textContent='入库中…'; msg.style.color='var(--text-2)'; rd.innerHTML='';
-      var url=API+(batch?'/ingest/dir':'/ingest/file');
-      var body=batch?{directory:path,unit_name:unit,delivery_label:del}:{path:path,unit_name:unit,delivery_label:del};
-      try{
-        var r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-        var d=await r.json();
-        if(batch){
+      // 批量目录：仍走非流式（多文件汇总）
+      if(batch){
+        try{
+          var r=await fetch(API+'/ingest/dir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({directory:path,unit_name:unit,delivery_label:del})});
+          var d=await r.json();
           msg.textContent='完成：'+d.ok+' / '+d.total+' 入库'; msg.style.color='var(--good)';
           rd.innerHTML='<div style="font-size:12px;color:var(--text-2);max-height:180px;overflow:auto">'+(d.results||[]).map(function(x){return '· '+(x.name||x.reason||'?')+' — '+(x.deduped?'已存在':(x.parse_status||x.reason||'ok'));}).join('<br>')+'</div>';
-        } else if(d.ok){
-          msg.textContent=d.deduped?'已存在（去重跳过）':'入库成功'; msg.style.color='var(--good)';
-          rd.innerHTML='<div class="src-item"><span class="src-n">✓</span><div><div class="src-t">'+(d.name||'')+'</div><div class="src-m">'+(d.kind||'')+' · 解析 '+(d.parse_status||'')+' · 工况对齐 '+((d.op_link&&d.op_link.confidence)||'-')+'</div></div></div>';
-        } else { msg.textContent='失败：'+(d.reason||d.detail||'未知'); msg.style.color='var(--crit)'; }
+          liveCases(); liveUnits(); livePending();
+        }catch(e){ msg.textContent='请求失败（后端未启动？）'; msg.style.color='var(--crit)'; }
+        return;
+      }
+      // 单文件：流式，逐步骤显示进度
+      var STEP_LABELS={detect:'识别类型',dedup:'去重 (SHA-256)',parse:'解析 · 提取关键量',align:'工况对齐',write:'写入库',slice:'切片渲染'};
+      var steps={};
+      function upsertStep(key,status,detail){
+        var row=steps[key];
+        if(!row){ row=document.createElement('div'); row.className='ing-step'; rd.appendChild(row); steps[key]=row; }
+        var ic=status==='run'?'<span class="ing-spin"></span>':(status==='ok'?'<span style="color:var(--good)">✓</span>':(status==='fail'?'<span style="color:var(--crit)">✗</span>':'<span style="color:var(--text-3)">⤼</span>'));
+        row.innerHTML='<span class="ing-ic">'+ic+'</span><b>'+(STEP_LABELS[key]||key)+'</b>'+(detail?'<span class="ing-det">'+detail+'</span>':'');
+      }
+      try{
+        var resp=await fetch(API+'/ingest/file/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:path,unit_name:unit,delivery_label:del})});
+        var reader=resp.body.getReader(), dec=new TextDecoder(), buf='', result=null;
+        while(true){ var ch=await reader.read(); if(ch.done) break;
+          buf+=dec.decode(ch.value,{stream:true}); var lines=buf.split('\n'); buf=lines.pop();
+          for(var i=0;i<lines.length;i++){ var line=lines[i].trim(); if(line.slice(0,5)!=='data:') continue;
+            var data=line.slice(5).trim(); if(!data||data==='[DONE]') continue;
+            var o; try{o=JSON.parse(data);}catch(e){continue;}
+            if(o.type==='progress'){ upsertStep(o.step,o.status,o.detail); }
+            else if(o.type==='result'){ result=o; }
+          }
+        }
+        if(result&&result.ok){ msg.textContent=result.deduped?'已存在（去重跳过）':'✓ 入库完成'; msg.style.color='var(--good)'; }
+        else { msg.textContent='✗ '+((result&&result.reason)||'失败'); msg.style.color='var(--crit)'; }
         liveCases(); liveUnits(); livePending();  // 刷新资源库卡片 + 树/统计 + 待对齐
       }catch(e){ msg.textContent='请求失败（后端未启动？）'; msg.style.color='var(--crit)'; }
     });

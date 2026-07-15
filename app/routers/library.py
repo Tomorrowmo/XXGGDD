@@ -1,14 +1,17 @@
 """数据资源库 API（v2）—— 批量入库 / 分层浏览 / 详情 / 切片 / PENDING 人工对齐。"""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.db.database import SessionLocal
 from app.db.models import (
     Unit, Delivery, Case, CaseOperatingLink, OperatingPoint, Measurement,
     Confidence, CaseKind,
@@ -18,6 +21,9 @@ from app.services import operating_point as op_svc
 from app.services import viz
 
 router = APIRouter(prefix="/api/v2", tags=["library"])
+
+SSE_HEADERS = {"Cache-Control": "no-cache, no-transform",
+               "X-Accel-Buffering": "no", "Connection": "keep-alive"}
 
 
 # ------------------------------------------------------------------ 入库
@@ -43,6 +49,29 @@ def ingest_file(req: IngestFileReq, db: Session = Depends(get_db)):
 def ingest_dir(req: IngestDirReq, db: Session = Depends(get_db)):
     return ingest_svc.ingest_directory(db, req.directory, unit_name=req.unit_name,
                                        delivery_label=req.delivery_label)
+
+
+@router.post("/ingest/file/stream")
+def ingest_file_stream(req: IngestFileReq):
+    """流式入库：实时推送 识别→去重→解析→对齐→写库→切片 各步骤进度（SSE）。
+
+    用独立 SessionLocal（流式生成器在请求会话关闭后仍运行），末尾发 result 事件。
+    """
+    def gen():
+        s = SessionLocal()
+        try:
+            for kind_, payload in ingest_svc.ingest_steps(
+                    s, req.path, unit_name=req.unit_name,
+                    delivery_label=req.delivery_label, with_slices=True):
+                tag = "result" if kind_ == "result" else "progress"
+                yield f"data: {json.dumps({'type': tag, **payload}, ensure_ascii=False)}\n\n"
+        except Exception as e:  # noqa: BLE001
+            yield f"data: {json.dumps({'type': 'result', 'ok': False, 'reason': str(e)[:200]}, ensure_ascii=False)}\n\n"
+        finally:
+            s.close()
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(gen(), media_type="text/event-stream", headers=SSE_HEADERS)
 
 
 # ------------------------------------------------------------------ 浏览
