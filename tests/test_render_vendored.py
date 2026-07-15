@@ -69,6 +69,18 @@ def test_render_thumbnail_png(tmp_path):
     assert out.stat().st_size > 1000
 
 
+def test_export_vtp(tmp_path):
+    pytest.importorskip("vtk")
+    from app.services.render import export_vtp as EV
+    r = EV.export_vtp(_two_block_mb(), str(tmp_path))
+    assert r["ok"] is True and r["n_points"] > 0
+    assert (tmp_path / "surface.vtp").stat().st_size > 200
+    assert (tmp_path / "meta.json").exists()
+    import json
+    meta = json.loads((tmp_path / "meta.json").read_text(encoding="utf-8"))
+    assert meta["vtp_file"] == "surface.vtp" and "scalars" in meta
+
+
 def test_render_turntable_frames(tmp_path):
     pytest.importorskip("vtk")
     from app.services.render import simagent_render as SR

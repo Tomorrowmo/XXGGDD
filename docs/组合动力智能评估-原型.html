@@ -398,7 +398,9 @@
   .fml-ref{font-size:10.5px;color:var(--text-3);margin-top:5px}
   .tt-viewer{height:300px;border:1px solid var(--border);border-radius:10px;background:radial-gradient(circle at 50% 40%,#12151d,#0a0c12);display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:grab;touch-action:none}
   .tt-viewer:active{cursor:grabbing}
-  .tt-ctl{display:flex;align-items:center;gap:10px;margin-top:8px}
+  .tt-ctl{display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap}
+  .v3d{height:340px;border:1px solid var(--border);border-radius:10px;background:radial-gradient(circle at 50% 40%,#0e131c,#070a10);overflow:hidden;position:relative}
+  .v3d canvas{display:block;border-radius:10px}
 
   /* ============ CHAT ============ */
   .chat{display:grid;grid-template-columns:230px 1fr;gap:0;height:100%;width:100%;border:1px solid var(--border);border-radius:var(--r);overflow:hidden;background:var(--surface)}
@@ -1991,9 +1993,10 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
       P['a-raw']='<div class="card card-pad"><h3>变量场统计 <span class="badge b-med" style="margin-left:auto"><span class="d"></span>simparse field_stats</span></h3><p class="muted" style="margin:3px 0 10px">全场 '+(d.variables||[]).length+' 个非零变量的量程（min/max/mean）。</p><div class="tblwrap"><table><thead><tr><th>变量</th><th class="num">min</th><th class="num">max</th><th class="num">mean</th></tr></thead><tbody>'+(d.variables||[]).slice(0,40).map(function(v){return '<tr><td class="qty">'+v.name+'</td><td class="num">'+nf(v.min)+'</td><td class="num">'+nf(v.max)+'</td><td class="num">'+nf(v.mean)+'</td></tr>';}).join('')+'</tbody></table></div></div>';
       // 三维 / 切片
       var slc=''; if(d.preview_urls&&Object.keys(d.preview_urls).length){ slc='<div class="slices">'+Object.keys(d.preview_urls).filter(function(k){return k.indexOf('turn')<0&&k!=='thumb';}).map(function(k){return '<div class="slice"><img src="'+d.preview_urls[k]+'" style="width:100%;height:96px;object-fit:cover;display:block"><div class="cap">'+k+'</div></div>';}).join('')+'</div>'; } else { slc='<div class="note">切片未生成（可在资源库入库时自动出图）</div>'; }
-      P['a-cloud']='<div class="card card-pad"><h3>三维可视化 · 交互旋转 <span class="badge b-med" style="margin-left:auto"><span class="d"></span>VTK 转台</span></h3>'+
-        '<div id="tt-viewer" class="tt-viewer"><div class="placeholder" style="border:0;background:transparent">首次进入生成转台帧（约十几秒）…</div></div>'+
-        '<div class="tt-ctl"><button class="chip" id="tt-play">▶ 自动旋转</button><span style="font-size:11.5px;color:var(--text-3)">🖱 按住左右拖动旋转 · 滚轮缩放</span><span id="tt-note" style="font-size:11.5px;color:var(--text-3);margin-left:auto"></span></div>'+
+      P['a-cloud']='<div class="card card-pad"><h3>三维可视化 · 交互（vtk.js WebGL）<span class="badge b-med" style="margin-left:auto"><span class="d"></span>真三维</span></h3>'+
+        '<div id="v3d" class="v3d"><div class="placeholder" style="border:0;background:transparent">进入面板加载三维模型…</div></div>'+
+        '<div class="tt-ctl"><span class="chip">上色：<select id="v3d-scalar" class="model-pick" style="font-size:12px"></select></span><span class="chip">显示：<select id="v3d-repr" class="model-pick" style="font-size:12px"><option value="surface">表面</option><option value="edges">表面+网格</option><option value="wire">线框</option><option value="points">点</option></select></span><span class="chip">透明 <input type="range" id="v3d-op" min="0.15" max="1" step="0.05" value="1" style="width:64px;vertical-align:middle"></span><span id="v3d-status" style="font-size:11px;color:var(--text-3);margin-left:auto"></span></div>'+
+        '<div class="note">🖱 拖动旋转 · 滚轮缩放 · Shift+拖动平移（vtk.js 读边界面 VTP，按物理量真实上色）。离线时自动降级为转台快照。</div>'+
         '<div class="sect-label" style="margin-top:14px">多方向切片</div>'+slc+'</div>';
       P['a-slice']='<div class="card card-pad"><h3>沿程面平均 <span class="badge b-med" style="margin-left:auto"><span class="d"></span>formulas 公式库</span></h3><div class="toolbar" style="margin:6px 0 10px"><span class="chip">Y轴：<select id="xs-field" class="model-pick" style="font-size:12px"><option value="P_static">静压</option><option value="T_static">静温</option><option value="Mach">马赫数</option><option value="T0">总温</option><option value="P0">总压</option></select></span><span class="chip">切片数 100</span><span id="xs-note" style="font-size:11.5px;color:var(--text-3);align-self:center"></span></div><div id="xs-chart"><p class="muted">加载中…</p></div></div>';
       // 入口参数（bc 真实）
@@ -2032,9 +2035,51 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
         pane.querySelectorAll('.alist .aitem').forEach(function(x){x.classList.toggle('on',x===it);});
         pane.querySelectorAll('.apane2').forEach(function(p){p.classList.toggle('on',p.dataset.ap===it.dataset.ap);});
         if(it.dataset.ap==='a-slice'&&!xsLoaded){ xsLoaded=true; loadXslice(cid); }
-        if(it.dataset.ap==='a-cloud'&&!ttLoaded){ ttLoaded=true; loadTurntable(cid); }
+        if(it.dataset.ap==='a-cloud'&&!ttLoaded){ ttLoaded=true; load3D(cid); }
       });
     }
+    // vtk.js 按需加载（CDN；离线则降级转台）
+    function ensureVtk(){ return new Promise(function(res,rej){ if(window.vtk) return res(window.vtk);
+      if(window.__vtkQ){ window.__vtkQ.push([res,rej]); return; } window.__vtkQ=[[res,rej]];
+      var s=document.createElement('script'); s.src='https://unpkg.com/vtk.js@32.9.0/vtk.js';
+      s.onload=function(){ (window.__vtkQ||[]).forEach(function(c){c[0](window.vtk);}); window.__vtkQ=null; };
+      s.onerror=function(){ (window.__vtkQ||[]).forEach(function(c){c[1](new Error('vtk.js 加载失败'));}); window.__vtkQ=null; };
+      document.head.appendChild(s); }); }
+    async function load3D(cid){
+      var box=document.getElementById('v3d'), st=document.getElementById('v3d-status'); if(!box) return;
+      box.innerHTML='<div class="placeholder" style="border:0;background:transparent">生成边界面 VTP…</div>';
+      var d=await getJSON(API+'/cases/'+cid+'/vtp');
+      if(!d||!d.available){ box.innerHTML='<div class="placeholder" style="border:0;background:transparent">'+((d&&d.reason)||'无法生成三维')+'</div>'; return; }
+      var vtk;
+      try{ vtk=await ensureVtk(); }catch(e){ if(st) st.textContent='vtk.js 离线 · 降级转台'; return fallbackTurntable(cid, box); }
+      box.innerHTML=''; box.style.position='relative';
+      var grw=vtk.Rendering.Misc.vtkGenericRenderWindow.newInstance({background:[0.043,0.05,0.08]});
+      grw.setContainer(box); var renderer=grw.getRenderer(), renderWindow=grw.getRenderWindow(); grw.resize();
+      var reader=vtk.IO.XML.vtkXMLPolyDataReader.newInstance();
+      var buf; try{ buf=await fetch(d.vtp_url).then(function(r){return r.arrayBuffer();}); }catch(e){ return fallbackTurntable(cid, box); }
+      reader.parseAsArrayBuffer(buf); var poly=reader.getOutputData(0);
+      var mapper=vtk.Rendering.Core.vtkMapper.newInstance({scalarVisibility:false}); mapper.setInputData(poly);
+      var actor=vtk.Rendering.Core.vtkActor.newInstance(); actor.setMapper(mapper); actor.getProperty().setColor(0.62,0.74,0.94); renderer.addActor(actor);
+      var lut=vtk.Rendering.Core.vtkColorTransferFunction.newInstance();
+      function preset(){ var cm=vtk.Rendering.Core.vtkColorMaps; if(cm){ var p=cm.getPresetByName('Cool to Warm'); if(p) lut.applyColorMap(p); } }
+      preset(); mapper.setLookupTable(lut);
+      var pd=poly.getPointData(), names=[];
+      for(var i=0;i<pd.getNumberOfArrays();i++){ var a=pd.getArrayByIndex(i); if(a&&a.getNumberOfComponents()===1) names.push(a.getName()); }
+      var pri=['T','p','U','Umag','Mach','rho','Qdot','k','epsilon','nut','alphat'];
+      names.sort(function(a,b){ var ia=pri.indexOf(a),ib=pri.indexOf(b); ia=ia<0?99:ia; ib=ib<0?99:ib; return ia-ib||a.localeCompare(b); });
+      function applyScalar(name){ if(name==='__none__'){ mapper.setScalarVisibility(false); actor.getProperty().setColor(0.62,0.74,0.94); renderWindow.render(); return; }
+        var arr=pd.getArrayByName(name); if(!arr) return; var rng=arr.getRange(); pd.setActiveScalars(name);
+        lut.removeAllPoints(); preset(); lut.setMappingRange(rng[0],rng[1]); if(lut.updateRange) lut.updateRange();
+        mapper.setLookupTable(lut); if(mapper.setScalarModeToUsePointData) mapper.setScalarModeToUsePointData(); mapper.setScalarVisibility(true); renderWindow.render(); }
+      var ssel=document.getElementById('v3d-scalar'); if(ssel){ ssel.innerHTML='<option value="__none__">仅几何</option>'+names.map(function(n){return '<option value="'+n+'">'+n+'</option>';}).join('');
+        var first=names.filter(function(n){return pri.indexOf(n)>=0;})[0]; if(first){ ssel.value=first; applyScalar(first); } ssel.onchange=function(){ applyScalar(ssel.value); }; }
+      var rsel=document.getElementById('v3d-repr'); if(rsel) rsel.onchange=function(){ var p=actor.getProperty(),v=rsel.value; if(v==='points'){p.setRepresentation(0);p.setPointSize(3);} else if(v==='wire'){p.setRepresentation(1);} else {p.setRepresentation(2);p.setEdgeVisibility(v==='edges');p.setEdgeColor(0.1,0.1,0.14);} renderWindow.render(); };
+      var op=document.getElementById('v3d-op'); if(op) op.oninput=function(){ actor.getProperty().setOpacity(+op.value); renderWindow.render(); };
+      renderer.resetCamera(); renderWindow.render();
+      if(st) st.textContent=(d.n_points||'?')+' 点 · '+(d.n_cells||'?')+' 面';
+      setTimeout(function(){ try{grw.resize(); renderWindow.render();}catch(_){} }, 80);
+    }
+    function fallbackTurntable(cid, box){ box.innerHTML='<div id="tt-viewer" class="tt-viewer" style="height:100%"></div>'; loadTurntable(cid); }
     async function loadTurntable(cid){
       var box=document.getElementById('tt-viewer'), note=document.getElementById('tt-note'); if(!box) return;
       var d=await getJSON(API+'/cases/'+cid+'/turntable?n=24');

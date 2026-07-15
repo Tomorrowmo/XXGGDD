@@ -205,6 +205,24 @@ def _render_turntable(case_path: str, out_dir: str, n_frames: int) -> dict:
     return {"ok": True, "images": imgs, "frames": len(imgs), "engine": engine, "mode": "turntable"}
 
 
+def _render_vtp(case_path: str, out_dir: str) -> dict:
+    """导出边界面 VTP（供前端 vtk.js 交互三维）。"""
+    try:
+        mb, engine = _load_mb(case_path)
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": str(e)[:200]}
+    here = os.path.dirname(os.path.abspath(__file__))
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    from render import export_vtp as EV  # type: ignore
+    r = EV.export_vtp(mb, out_dir)
+    if not r.get("ok"):
+        return {"ok": False, "error": r.get("reason", "VTP 导出失败")}
+    return {"ok": True, "vtp": "surface.vtp", "meta": "meta.json",
+            "scalars": [s["name"] for s in r.get("scalars", [])],
+            "n_points": r.get("n_points"), "n_cells": r.get("n_cells"), "engine": engine}
+
+
 def main() -> None:
     if len(sys.argv) < 3:
         _emit({"ok": False, "error": "usage: render_runner.py <case> <out> [scalar|mode]"})
@@ -213,7 +231,9 @@ def main() -> None:
     arg3 = sys.argv[3] if len(sys.argv) > 3 else "T"
     os.makedirs(out_dir, exist_ok=True)
     try:
-        if arg3.startswith("turntable"):     # turntable:24
+        if arg3 == "vtp":
+            _emit(_render_vtp(case_path, out_dir))
+        elif arg3.startswith("turntable"):     # turntable:24
             n = 24
             if ":" in arg3:
                 try:

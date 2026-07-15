@@ -68,6 +68,41 @@ def cached_previews(case_path: str | Path) -> dict:
     return {"available": bool(images), "dir": str(out), "images": images}
 
 
+def generate_vtp(case_path: str | Path, *, timeout: int = 240) -> dict:
+    """导出边界面 VTP（供前端 vtk.js 真三维交互）。已缓存则直接返回。"""
+    out = preview_dir(case_path)
+    key = out.name
+    if (out / "surface.vtp").exists() and (out / "meta.json").exists():
+        try:
+            meta = json.loads((out / "meta.json").read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            meta = {}
+        return {"available": True, "cached": True,
+                "vtp_url": f"/previews/{key}/surface.vtp",
+                "meta_url": f"/previews/{key}/meta.json",
+                "scalars": [s.get("name") for s in meta.get("scalars", [])],
+                "n_points": meta.get("n_points"), "n_cells": meta.get("n_cells")}
+    if not _env_ready(case_path):
+        return {"available": False, "reason": "该格式需 Romtek 渲染环境"}
+    runner = Path(__file__).with_name("render_runner.py")
+    env = {**os.environ, "SIMGRAPH2_ROOT": str(settings.assets.simgraph2_root)}
+    try:
+        proc = subprocess.run(
+            [_render_python(case_path), str(runner), str(case_path), str(out), "vtp"],
+            capture_output=True, text=True, timeout=timeout, env=env)
+    except subprocess.TimeoutExpired:
+        return {"available": False, "reason": "VTP 导出超时"}
+    res = _parse_last_json(proc.stdout)
+    if not res or not res.get("ok"):
+        return {"available": False, "reason": (res or {}).get("error") or "VTP 导出失败"}
+    return {"available": True, "cached": False,
+            "vtp_url": f"/previews/{key}/surface.vtp",
+            "meta_url": f"/previews/{key}/meta.json",
+            "scalars": res.get("scalars", []),
+            "n_points": res.get("n_points"), "n_cells": res.get("n_cells"),
+            "engine": res.get("engine")}
+
+
 def generate_turntable(case_path: str | Path, n_frames: int = 24, *, timeout: int = 240) -> dict:
     """生成绕轴 n 帧转台图（供前端拖拽轨道旋转）。已缓存则直接返回。"""
     out = preview_dir(case_path)

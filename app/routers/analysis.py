@@ -245,6 +245,19 @@ def simulation_detail(case_id: int, db: Session = Depends(get_db)):
             "x_slice_available": sim_analysis._is_openfoam(uri)}
 
 
+@router.get("/{case_id}/vtp")
+def vtp_export(case_id: int, db: Session = Depends(get_db)):
+    """导出边界面 VTP（供前端 vtk.js 真三维交互：旋转/缩放/按标量上色）。"""
+    c = db.get(Case, case_id)
+    if c is None:
+        raise HTTPException(404, "算例不存在")
+    if c.kind != CaseKind.SIMULATION:
+        raise HTTPException(400, "非仿真算例")
+    if not Path(c.storage_uri).exists():
+        return {"available": False, "reason": "原始文件不可用（种子/演示数据无文件）"}
+    return viz.generate_vtp(c.storage_uri)
+
+
 @router.get("/{case_id}/turntable")
 def turntable(case_id: int, n: int = 24, db: Session = Depends(get_db)):
     """绕轴多帧转台图（供三维交互 · 拖拽旋转）。首次生成后缓存。"""
