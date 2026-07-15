@@ -387,6 +387,14 @@
   .fb-item.dim{opacity:.5;cursor:default}
   .fb-dot{width:7px;height:7px;border-radius:50%;background:var(--good);flex:none}
   .fb-pick{font-size:11px;padding:2px 8px;border:1px solid var(--accent);color:var(--accent);border-radius:6px;background:transparent;cursor:pointer}
+  .fml-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:9px}
+  .fml{border:1px solid var(--border);border-radius:9px;padding:10px 12px;background:var(--surface)}
+  .fml-hd{display:flex;align-items:baseline;gap:8px;justify-content:space-between}
+  .fml-hd b{color:var(--text);font-size:13px}
+  .fml-key{font-size:10.5px;color:var(--text-3);font-family:var(--mono)}
+  .fml-expr{font-family:var(--mono);font-size:12.5px;color:var(--accent);margin:7px 0;padding:6px 8px;background:var(--surface-2);border-radius:6px;overflow-x:auto;white-space:nowrap}
+  .fml-meta{display:flex;flex-wrap:wrap;gap:10px;font-size:11px;color:var(--text-2)}
+  .fml-ref{font-size:10.5px;color:var(--text-3);margin-top:5px}
 
   /* ============ CHAT ============ */
   .chat{display:grid;grid-template-columns:230px 1fr;gap:0;height:100%;width:100%;border:1px solid var(--border);border-radius:var(--r);overflow:hidden;background:var(--surface)}
@@ -1141,6 +1149,10 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
           <div id="parse-cfg"><div class="placeholder" style="font-size:12.5px">加载中…</div></div>
         </div>
       </div>
+      <div class="card card-pad" style="margin-top:16px"><h3>计算公式库（skills）<span class="tag" style="margin-left:auto">可扩展</span></h3>
+        <p class="muted" style="margin:3px 0 10px">从原后处理代码提取的**纯计算公式**（数据源无关，OpenFOAM / Fluent / CGNS 复用同一套），供专业分析调用。加新公式只需在 <code>app/services/formulas</code> 追加并登记进 catalog。</p>
+        <div id="formula-lib"><div class="placeholder" style="font-size:12.5px">加载中…</div></div>
+      </div>
     </section>
 
     <!-- ================= DOCS ================= -->
@@ -1691,7 +1703,7 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
     } else { mt='<div class="note">暂无提取的关键量（该算例的 QOI 未落库）</div>'; }
     sim.innerHTML = slices + ov + mt;
     // 底部按钮：进入完整分析 / 关闭
-    var full=document.getElementById('dw-full'); if(full) full.onclick=function(){ drawer.classList.remove('show'); mask.classList.remove('show'); go(isExp?'exp':'sim'); };
+    var full=document.getElementById('dw-full'); if(full) full.onclick=function(){ drawer.classList.remove('show'); mask.classList.remove('show'); go(isExp?'exp':'sim'); var fn=isExp?window.expGoto:window.simGoto; if(fn) fn(+cid); };
   };
 
   function markLive(){
@@ -1933,6 +1945,8 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
       pane.innerHTML=html; bind();
     }
     function bind(){ var s=document.getElementById('exp-sel'); if(s) s.addEventListener('change', function(){ load(s.value); }); }
+    // 供资源库抽屉"进入完整分析"跳转到指定车次
+    window.expGoto=function(cid){ if(exps.some(function(x){return x.id==cid;})) load(cid); };
     load(exps[0].id);
   }
 
@@ -2025,6 +2039,8 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
       draw();
     }
     function bindSel(){ var s=document.getElementById('sim-sel'); if(s) s.addEventListener('change', function(){ load(s.value); }); }
+    // 供资源库抽屉"进入完整分析"跳转到指定算例
+    window.simGoto=function(cid){ if(sims.some(function(x){return x.id==cid;})) load(cid); };
     // 默认选第一个有真实数据的算例（种子占位无文件 → 跳过），复用探测到的数据，避免二次请求
     (async function(){
       for(var i=0;i<sims.length;i++){ var pb=await getJSON(API+'/cases/'+sims[i].id+'/simulation'); if(pb&&pb.available){ load(sims[i].id, pb); return; } }
@@ -2275,6 +2291,23 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
     markLive();
   }
 
-  liveCompare(); liveCases(); liveUnits(); liveReport(); liveNL(); liveLLM(); liveChat(); liveExp(); liveSim(); liveSimMulti(); liveExpMulti(); livePending(); liveConfig(); liveKB();
+  // ---- 计算公式库（skills）目录：从 /api/v2/formulas 渲染分类清单 ----
+  async function liveFormulas(){
+    var mount=document.getElementById('formula-lib'); if(!mount) return;
+    var d=await getJSON(API+'/formulas'); if(!d){ return; }
+    mount.innerHTML='<div style="font-size:11.5px;color:var(--text-3);margin-bottom:10px">共 '+d.n+' 条公式 · '+d.categories.length+' 类</div>'+
+      d.categories.map(function(cat){
+        return '<div class="sect-label" style="margin:12px 0 6px">'+cat.name+'（'+cat.formulas.length+'）</div>'+
+          '<div class="fml-grid">'+cat.formulas.map(function(f){
+            return '<div class="fml"><div class="fml-hd"><b>'+f.name+'</b><code class="fml-key">'+f.key+'</code></div>'+
+              '<div class="fml-expr">'+f.expr+'</div>'+
+              '<div class="fml-meta"><span>入：'+(f.inputs||[]).join(', ')+'</span><span>出：'+f.output+(f.unit&&f.unit!=='—'&&f.unit!=='1'?(' ('+f.unit+')'):'')+'</span></div>'+
+              (f.reference?'<div class="fml-ref">📖 '+f.reference+'</div>':'')+'</div>';
+          }).join('')+'</div>';
+      }).join('');
+    markLive();
+  }
+
+  liveCompare(); liveCases(); liveUnits(); liveReport(); liveNL(); liveLLM(); liveChat(); liveExp(); liveSim(); liveSimMulti(); liveExpMulti(); livePending(); liveConfig(); liveKB(); liveFormulas();
 })();
 </script>
