@@ -1698,6 +1698,27 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
     var d=await getJSON(API+'/cases/'+cid); if(!d){ sim.innerHTML='<p class="muted">加载失败</p>'; return; }
     var isExp=d.kind==='experiment';
     document.getElementById('dw-sub').textContent=(isExp?'实验':'仿真')+' · '+d.unit+' · 工况 '+(d.operating_point||'—')+' · '+d.parse_confidence;
+    // 试验数据：读入并直接显示 数据表 + 时程曲线（与仿真 QOI 视图分开——试验没有 CFD QOI）
+    if(isExp){
+      var ed=await getJSON(API+'/cases/'+cid+'/experiment'); var eh='';
+      if(!ed||!ed.available){ eh='<div class="note">'+((ed&&ed.reason)||'无法读取试验数据')+'</div>'; }
+      else {
+        eh+='<div class="sect-label" style="margin-top:0">概览</div><div class="tblwrap" style="border:0"><table style="min-width:auto"><tbody>'
+          +'<tr><td class="qty">格式</td><td>'+(d.source_format||'txt-experiment')+'</td></tr>'
+          +'<tr><td class="qty">通道 / 行</td><td class="num">'+ed.n_channels+' 通道 · '+ed.n_rows+' 行</td></tr>'
+          +'<tr><td class="qty">工况 / 对齐</td><td>'+(d.operating_point||'—')+' · '+(d.mapping_confidence||'-')+'</td></tr></tbody></table></div>';
+        if(ed.phases&&ed.phases.ignition) eh+='<div class="sect-label">阶段分割（点火/建压/主级稳态/关车）</div>'+phaseBar(ed.phases);
+        if(ed.curves&&ed.curves.length) eh+='<div class="sect-label">通道时程曲线 · 前 '+ed.curves.length+' 路（含大气修正）</div><div class="chartbox">'+lineChart(ed.curves,470,210)+'</div>';
+        if(ed.steady_qoi&&ed.steady_qoi.length){ eh+='<div class="sect-label">稳态关键量 · 真值参照</div><div class="tblwrap"><table><thead><tr><th>通道</th><th class="num">稳态值</th><th class="num">单位</th></tr></thead><tbody>'
+          +ed.steady_qoi.slice(0,16).map(function(q){return '<tr><td class="qty">'+(q.quantity||q.channel||'')+'</td><td class="num">'+(Math.round((q.value||0)*1000)/1000)+'</td><td class="num">'+(q.unit||'')+'</td></tr>';}).join('')+'</tbody></table></div>'; }
+        if(ed.stats&&ed.stats.length){ eh+='<div class="sect-label">各通道统计（min/max/均值）</div><div class="tblwrap"><table><thead><tr><th>通道</th><th class="num">min</th><th class="num">max</th><th class="num">mean</th></tr></thead><tbody>'
+          +ed.stats.slice(0,16).map(function(s){return '<tr><td class="qty">'+(s.label||s.channel||'')+'</td><td class="num">'+nf(s.min)+'</td><td class="num">'+nf(s.max)+'</td><td class="num">'+nf(s.mean)+'</td></tr>';}).join('')+'</tbody></table></div>'; }
+        if(ed.anomalies&&ed.anomalies.length) eh+='<div class="note" style="border-left:3px solid var(--warn);margin-top:8px">⚠ 异常：'+ed.anomalies.map(function(a){return (a.channel?a.channel+' ':'')+(a.message||a.reason||a.description||'异常');}).join('；')+'</div>';
+      }
+      sim.innerHTML=eh;
+      var fullE=document.getElementById('dw-full'); if(fullE) fullE.onclick=function(){ drawer.classList.remove('show'); mask.classList.remove('show'); go('exp'); if(window.expGoto) window.expGoto(+cid); };
+      return;
+    }
     // 切片（仿真，真实渲染图）
     var slices='';
     if(!isExp){

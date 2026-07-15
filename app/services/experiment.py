@@ -28,30 +28,73 @@ class ParsedExperiment:
 
 
 def _classify_channel(label: str) -> str:
-    if re.match(r"流道", label):
-        return "流道压力"
-    if re.match(r"室压", label):
-        return "室压"
-    if re.match(r"隔离段", label):
+    """按关键词识别类别（不再只认前缀，兼容"通道 4/加热器室压（PF) - (Mpa)"这类命名）。"""
+    l = label
+    if "隔离段" in l:
         return "隔离段"
-    if re.match(r"壁温", label):
+    if "室压" in l:
+        return "室压"
+    if "流道" in l:
+        return "流道压力"
+    if "壁温" in l or "温度" in l or re.search(r"\(\s*[K℃]\s*\)|\(deg", l, re.I):
         return "壁温"
-    if re.match(r"流量", label):
+    if "流量" in l or re.search(r"\(\s*kg/?s", l, re.I):
         return "流量"
+    if "压" in l or re.search(r"\(\s*[kM]?pa\s*\)", l, re.I):   # 兜底：带压力单位→按压力处理
+        return "流道压力"
     return "其它"
 
 
+def _is_number(s: str) -> bool:
+    try:
+        float(s)
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
+def _detect_header_index(lines: list[str], delimiter: str, configured: int) -> int:
+    """自动定位表头行：首格非数字（是标签）、多列、且下一非空行为数值行。
+
+    不同采集软件的前导元数据行数不一（本例前 9 行是 Data info/采样率…，表头在第 9 行而非
+    配置的 10）。配置行若本身就像表头则尊重配置，否则扫描前 60 行自动找。
+    """
+    n = len(lines)
+
+    def looks_header(i: int) -> bool:
+        if i < 0 or i >= n:
+            return False
+        cells = [c.strip() for c in lines[i].split(delimiter)]
+        if len(cells) < 2 or _is_number(cells[0]):
+            return False
+        j = i + 1
+        while j < n and not lines[j].strip():
+            j += 1
+        if j >= n:
+            return False
+        nxt = [c.strip() for c in lines[j].split(delimiter)]
+        return len(nxt) >= 2 and _is_number(nxt[0])
+
+    if looks_header(configured):
+        return configured
+    for i in range(min(n, 60)):
+        if looks_header(i):
+            return i
+    return configured if configured < n else 0
+
+
 def read_experiment(path: str | Path) -> ParsedExperiment:
-    """按 settings.experiment 配置解析试验 TXT/CSV（不再写死 headerIndex/分隔符）。"""
+    """按 settings.experiment 配置解析试验 TXT/CSV（headerIndex 自动定位，配置作兜底）。"""
     cfg = settings.experiment
     path = Path(path)
     lines = path.read_text(encoding=cfg.encoding, errors="replace").splitlines()
-    if len(lines) <= cfg.header_index:
-        raise ValueError(f"文件行数不足，headerIndex={cfg.header_index} 越界：{path.name}")
+    hidx = _detect_header_index(lines, cfg.delimiter, cfg.header_index)
+    if len(lines) <= hidx:
+        raise ValueError(f"文件行数不足，headerIndex={hidx} 越界：{path.name}")
 
-    headers = [h.strip() for h in lines[cfg.header_index].split(cfg.delimiter)]
+    headers = [h.strip() for h in lines[hidx].split(cfg.delimiter)]
     rows = []
-    for ln in lines[cfg.header_index + 1:]:
+    for ln in lines[hidx + 1:]:
         if not ln.strip():
             continue
         parts = ln.split(cfg.delimiter)
@@ -67,13 +110,25 @@ def read_experiment(path: str | Path) -> ParsedExperiment:
 
 
 def extract_channels(headers: list[str]) -> list[dict]:
-    """按可配置正则集提取通道（原 plotter 只认 流道\\d+）。"""
+    """宽松提取通道：**每个非时间列都作为一路通道**（保证"读入即显示"，不因命名不合正则漏掉）。
+
+    正则集（channel_patterns）仅用于把匹配到的列**优先**排前 + 归类；未匹配的列仍保留为"其它"。
+    时间列（time_column）与明显的时间/序号列跳过。
+    """
+    time_col = settings.experiment.time_column
     patterns = [re.compile(p) for p in settings.experiment.channel_patterns]
     out = []
     for idx, h in enumerate(headers):
         h = h.strip()
-        if any(p.search(h) for p in patterns):
-            out.append({"index": idx, "label": h, "category": _classify_channel(h)})
+        if idx == time_col or not h:
+            continue
+        if re.search(r"^time\b|时间|^\s*t\s*\(s\)", h, re.I):   # 跳过时间列
+            continue
+        matched = any(p.search(h) for p in patterns)
+        out.append({"index": idx, "label": h, "category": _classify_channel(h),
+                    "matched": matched})
+    # 正则命中的排前（若配置了 channel_patterns），保证关键通道优先出现在曲线/统计里
+    out.sort(key=lambda c: (0 if c["matched"] else 1))
     return out
 
 
