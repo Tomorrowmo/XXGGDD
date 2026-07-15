@@ -245,6 +245,19 @@ def simulation_detail(case_id: int, db: Session = Depends(get_db)):
             "x_slice_available": sim_analysis._is_openfoam(uri)}
 
 
+@router.get("/{case_id}/turntable")
+def turntable(case_id: int, n: int = 24, db: Session = Depends(get_db)):
+    """绕轴多帧转台图（供三维交互 · 拖拽旋转）。首次生成后缓存。"""
+    c = db.get(Case, case_id)
+    if c is None:
+        raise HTTPException(404, "算例不存在")
+    if c.kind != CaseKind.SIMULATION:
+        raise HTTPException(400, "非仿真算例")
+    if not Path(c.storage_uri).exists():
+        return {"available": False, "reason": "原始文件不可用（种子/演示数据无文件）"}
+    return viz.generate_turntable(c.storage_uri, n_frames=n)
+
+
 @router.get("/{case_id}/x-slice")
 def x_slice(case_id: int, n_slices: int = 100, db: Session = Depends(get_db)):
     """沿程面平均（静压/静温/马赫/总温/总压）—— 用公式库算真实场（OpenFOAM）。"""

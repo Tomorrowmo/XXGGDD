@@ -68,6 +68,33 @@ def cached_previews(case_path: str | Path) -> dict:
     return {"available": bool(images), "dir": str(out), "images": images}
 
 
+def generate_turntable(case_path: str | Path, n_frames: int = 24, *, timeout: int = 240) -> dict:
+    """生成绕轴 n 帧转台图（供前端拖拽轨道旋转）。已缓存则直接返回。"""
+    out = preview_dir(case_path)
+    key = out.name
+    cached = sorted(p.name for p in out.glob("turn_*.png"))
+    if cached:
+        return {"available": True, "frames": len(cached),
+                "urls": [f"/previews/{key}/{fn}" for fn in cached], "cached": True}
+    if not _env_ready(case_path):
+        return {"available": False, "reason": "该格式需 Romtek 渲染环境（PostProcessTool + SimGraph2）"}
+    runner = Path(__file__).with_name("render_runner.py")
+    env = {**os.environ, "SIMGRAPH2_ROOT": str(settings.assets.simgraph2_root)}
+    try:
+        proc = subprocess.run(
+            [_render_python(case_path), str(runner), str(case_path), str(out), f"turntable:{n_frames}"],
+            capture_output=True, text=True, timeout=timeout, env=env)
+    except subprocess.TimeoutExpired:
+        return {"available": False, "reason": "转台渲染超时"}
+    res = _parse_last_json(proc.stdout)
+    if not res or not res.get("ok"):
+        return {"available": False, "reason": (res or {}).get("error") or "转台渲染失败"}
+    frames = sorted(res.get("images", []))
+    return {"available": True, "frames": len(frames),
+            "urls": [f"/previews/{key}/{fn}" for fn in frames],
+            "engine": res.get("engine"), "cached": False}
+
+
 def generate_previews(case_path: str | Path, scalar: str = "T", *, timeout: int = 180) -> dict:
     """为算例生成切片快照（子进程调 PostProcessTool 渲染）。
 

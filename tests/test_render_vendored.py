@@ -69,6 +69,16 @@ def test_render_thumbnail_png(tmp_path):
     assert out.stat().st_size > 1000
 
 
+def test_render_turntable_frames(tmp_path):
+    pytest.importorskip("vtk")
+    from app.services.render import simagent_render as SR
+    n = SR.render_turntable(_two_block_mb(), str(tmp_path), n_frames=8)
+    assert n == 8
+    frames = sorted(tmp_path.glob("turn_*.png"))
+    assert len(frames) == 8
+    assert all(f.stat().st_size > 500 for f in frames)
+
+
 @pytest.mark.skipif(not _CASE_DIR.exists(), reason="DLR 测试算例不可用")
 def test_end_to_end_vendored_engine(tmp_path, monkeypatch):
     # 端到端：真出图，且引擎标记为 vendored（证明没走 SimGraph2/Romtek）

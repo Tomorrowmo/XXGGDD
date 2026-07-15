@@ -359,3 +359,43 @@ def render_thumbnail(multiblock, out_path, w=384, h=384):
     writer.Write()
     win.Finalize()
     return True
+
+
+def _body_actor_renderer(body):
+    """公用：物面 → (renderer, window, camera) 明暗着色 + 渐变背景。"""
+    norm = vtk.vtkPolyDataNormals()
+    norm.SetInputData(body); norm.SetFeatureAngle(60); norm.SplittingOff(); norm.ConsistencyOn(); norm.Update()
+    mapper = vtk.vtkPolyDataMapper(); mapper.SetInputData(norm.GetOutput()); mapper.ScalarVisibilityOff()
+    actor = vtk.vtkActor(); actor.SetMapper(mapper)
+    p = actor.GetProperty()
+    p.SetColor(0.62, 0.74, 0.94); p.SetAmbient(0.30); p.SetDiffuse(0.85); p.SetSpecular(0.30); p.SetSpecularPower(24)
+    ren = vtk.vtkRenderer(); ren.AddActor(actor)
+    ren.GradientBackgroundOn(); ren.SetBackground(0.055, 0.065, 0.095); ren.SetBackground2(0.13, 0.15, 0.21)
+    return ren
+
+
+def render_turntable(multiblock, out_dir, n_frames: int = 24, w: int = 440, h: int = 440) -> int:
+    """绕竖轴渲染 n 帧（turn_00.png … turn_{n-1}.png），供前端拖拽轨道旋转。返回帧数。"""
+    blocks = _named_blocks(multiblock)
+    if not blocks:
+        return 0
+    body = _pick_body_surface(blocks)
+    if body is None or body.GetNumberOfPoints() == 0:
+        return 0
+    os.makedirs(out_dir, exist_ok=True)
+    ren = _body_actor_renderer(body)
+    win = vtk.vtkRenderWindow(); win.SetOffScreenRendering(1); win.SetSize(w, h); win.AddRenderer(ren)
+    cam = ren.GetActiveCamera(); cam.SetViewUp(0, 0, 1)
+    ren.ResetCamera(); cam.Elevation(18); ren.ResetCameraClippingRange(); cam.Zoom(1.25)
+    step = 360.0 / max(n_frames, 1)
+    count = 0
+    for i in range(n_frames):
+        ren.ResetCameraClippingRange()
+        win.Render()
+        w2i = vtk.vtkWindowToImageFilter(); w2i.SetInput(win); w2i.SetInputBufferTypeToRGB(); w2i.ReadFrontBufferOff(); w2i.Update()
+        writer = vtk.vtkPNGWriter(); writer.SetFileName(os.path.join(out_dir, "turn_%02d.png" % i))
+        writer.SetInputConnection(w2i.GetOutputPort()); writer.Write()
+        count += 1
+        cam.Azimuth(step)
+    win.Finalize()
+    return count

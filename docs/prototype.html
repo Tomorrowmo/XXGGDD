@@ -395,6 +395,9 @@
   .fml-expr{font-family:var(--mono);font-size:12.5px;color:var(--accent);margin:7px 0;padding:6px 8px;background:var(--surface-2);border-radius:6px;overflow-x:auto;white-space:nowrap}
   .fml-meta{display:flex;flex-wrap:wrap;gap:10px;font-size:11px;color:var(--text-2)}
   .fml-ref{font-size:10.5px;color:var(--text-3);margin-top:5px}
+  .tt-viewer{height:300px;border:1px solid var(--border);border-radius:10px;background:radial-gradient(circle at 50% 40%,#12151d,#0a0c12);display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:grab;touch-action:none}
+  .tt-viewer:active{cursor:grabbing}
+  .tt-ctl{display:flex;align-items:center;gap:10px;margin-top:8px}
 
   /* ============ CHAT ============ */
   .chat{display:grid;grid-template-columns:230px 1fr;gap:0;height:100%;width:100%;border:1px solid var(--border);border-radius:var(--r);overflow:hidden;background:var(--surface)}
@@ -1986,8 +1989,11 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
         ['瞬态',boolBadge(ov.transient)],['分区数',ov.decomposition],['重力',ov.gravity?('['+ov.gravity.map(function(g){return nf(g,2);}).join(', ')+']'):null]])+'</div>';
       P['a-raw']='<div class="card card-pad"><h3>变量场统计 <span class="badge b-med" style="margin-left:auto"><span class="d"></span>simparse field_stats</span></h3><p class="muted" style="margin:3px 0 10px">全场 '+(d.variables||[]).length+' 个非零变量的量程（min/max/mean）。</p><div class="tblwrap"><table><thead><tr><th>变量</th><th class="num">min</th><th class="num">max</th><th class="num">mean</th></tr></thead><tbody>'+(d.variables||[]).slice(0,40).map(function(v){return '<tr><td class="qty">'+v.name+'</td><td class="num">'+nf(v.min)+'</td><td class="num">'+nf(v.max)+'</td><td class="num">'+nf(v.mean)+'</td></tr>';}).join('')+'</tbody></table></div></div>';
       // 三维 / 切片
-      var slc=''; if(d.preview_urls&&Object.keys(d.preview_urls).length){ slc='<div class="slices">'+Object.keys(d.preview_urls).map(function(k){return '<div class="slice"><img src="'+d.preview_urls[k]+'" style="width:100%;height:96px;object-fit:cover;display:block"><div class="cap">'+k+'</div></div>';}).join('')+'</div>'; } else { slc='<div class="note">切片未生成（可在资源库入库时自动出图）</div>'; }
-      P['a-cloud']='<div class="card card-pad"><h3>三维可视化 · 多方向切片 <span class="badge b-med" style="margin-left:auto"><span class="d"></span>VTK 真实渲染</span></h3>'+slc+'</div>';
+      var slc=''; if(d.preview_urls&&Object.keys(d.preview_urls).length){ slc='<div class="slices">'+Object.keys(d.preview_urls).filter(function(k){return k.indexOf('turn')<0&&k!=='thumb';}).map(function(k){return '<div class="slice"><img src="'+d.preview_urls[k]+'" style="width:100%;height:96px;object-fit:cover;display:block"><div class="cap">'+k+'</div></div>';}).join('')+'</div>'; } else { slc='<div class="note">切片未生成（可在资源库入库时自动出图）</div>'; }
+      P['a-cloud']='<div class="card card-pad"><h3>三维可视化 · 交互旋转 <span class="badge b-med" style="margin-left:auto"><span class="d"></span>VTK 转台</span></h3>'+
+        '<div id="tt-viewer" class="tt-viewer"><div class="placeholder" style="border:0;background:transparent">首次进入生成转台帧（约十几秒）…</div></div>'+
+        '<div class="tt-ctl"><button class="chip" id="tt-play">▶ 自动旋转</button><span style="font-size:11.5px;color:var(--text-3)">🖱 按住左右拖动旋转 · 滚轮缩放</span><span id="tt-note" style="font-size:11.5px;color:var(--text-3);margin-left:auto"></span></div>'+
+        '<div class="sect-label" style="margin-top:14px">多方向切片</div>'+slc+'</div>';
       P['a-slice']='<div class="card card-pad"><h3>沿程面平均 <span class="badge b-med" style="margin-left:auto"><span class="d"></span>formulas 公式库</span></h3><div class="toolbar" style="margin:6px 0 10px"><span class="chip">Y轴：<select id="xs-field" class="model-pick" style="font-size:12px"><option value="P_static">静压</option><option value="T_static">静温</option><option value="Mach">马赫数</option><option value="T0">总温</option><option value="P0">总压</option></select></span><span class="chip">切片数 100</span><span id="xs-note" style="font-size:11.5px;color:var(--text-3);align-self:center"></span></div><div id="xs-chart"><p class="muted">加载中…</p></div></div>';
       // 入口参数（bc 真实）
       var bc=d.bc||{}; var inletRows='';
@@ -2019,13 +2025,34 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
       var panesHtml=NAV.map(function(n,i){return '<div class="apane2'+(i===0?' on':'')+'" data-ap="'+n[0]+'">'+(P[n[0]]||'')+'</div>';}).join('');
       pane.innerHTML=sel(cid)+stat+'<div class="grid cols-sim" style="align-items:start"><div class="card card-pad"><div class="alist">'+navHtml+'</div></div><div>'+panesHtml+'</div></div>';
       bindSel();
-      // nav 切换 + 沿程面平均懒加载
-      var xsLoaded=false;
+      // nav 切换 + 懒加载（沿程面平均 / 三维转台）
+      var xsLoaded=false, ttLoaded=false;
       pane.querySelector('.alist').addEventListener('click', function(e){ var it=e.target.closest('.aitem'); if(!it) return;
         pane.querySelectorAll('.alist .aitem').forEach(function(x){x.classList.toggle('on',x===it);});
         pane.querySelectorAll('.apane2').forEach(function(p){p.classList.toggle('on',p.dataset.ap===it.dataset.ap);});
         if(it.dataset.ap==='a-slice'&&!xsLoaded){ xsLoaded=true; loadXslice(cid); }
+        if(it.dataset.ap==='a-cloud'&&!ttLoaded){ ttLoaded=true; loadTurntable(cid); }
       });
+    }
+    async function loadTurntable(cid){
+      var box=document.getElementById('tt-viewer'), note=document.getElementById('tt-note'); if(!box) return;
+      var d=await getJSON(API+'/cases/'+cid+'/turntable?n=24');
+      if(!d||!d.available||!(d.urls||[]).length){ box.innerHTML='<div class="placeholder" style="border:0;background:transparent">'+((d&&d.reason)||'无法生成转台')+'</div>'; return; }
+      var urls=d.urls, N=urls.length, cur=0, zoom=1;
+      // 预加载
+      urls.forEach(function(u){ var im=new Image(); im.src=u; });
+      box.innerHTML='<img id="tt-img" src="'+urls[0]+'" draggable="false" style="width:100%;height:100%;object-fit:contain;user-select:none;transition:transform .05s">';
+      var img=document.getElementById('tt-img'); if(note) note.textContent=N+' 帧 · '+(d.engine||'');
+      function show(i){ cur=((i%N)+N)%N; img.src=urls[cur]; }
+      var dragging=false, sx=0, sf=0, moved=false;
+      box.addEventListener('pointerdown', function(e){ dragging=true; moved=false; sx=e.clientX; sf=cur; box.setPointerCapture(e.pointerId); stop(); });
+      box.addEventListener('pointermove', function(e){ if(!dragging) return; var dx=e.clientX-sx; if(Math.abs(dx)>3) moved=true; show(sf - Math.round(dx/ (box.clientWidth/N) )); });
+      box.addEventListener('pointerup', function(e){ dragging=false; try{box.releasePointerCapture(e.pointerId);}catch(_){} });
+      box.addEventListener('wheel', function(e){ e.preventDefault(); zoom=Math.max(1,Math.min(3, zoom*(e.deltaY<0?1.12:0.9))); img.style.transform='scale('+zoom+')'; }, {passive:false});
+      // 自动旋转
+      var timer=null;
+      function stop(){ if(timer){ clearInterval(timer); timer=null; var b=document.getElementById('tt-play'); if(b) b.textContent='▶ 自动旋转'; } }
+      var pb=document.getElementById('tt-play'); if(pb) pb.addEventListener('click', function(){ if(timer){ stop(); } else { timer=setInterval(function(){ show(cur+1); },90); pb.textContent='⏸ 停止'; } });
     }
     async function loadXslice(cid){
       var box=document.getElementById('xs-chart'), note=document.getElementById('xs-note'); if(!box) return;

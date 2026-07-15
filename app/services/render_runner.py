@@ -163,18 +163,68 @@ def _render_via_simgraph2(case_path: str, out_dir: str, scalar: str) -> dict:
         return {"ok": False, "error": f"渲染异常：{e}"}
 
 
+def _load_mb(case_path: str):
+    """加载算例为 VTK multiblock（OpenFOAM 用 vendored；否则 Romtek），返回 (mb, engine)。"""
+    if _is_openfoam(case_path):
+        here = os.path.dirname(os.path.abspath(__file__))
+        if here not in sys.path:
+            sys.path.insert(0, here)
+        from render import openfoam_loader  # type: ignore
+        cp = os.path.dirname(case_path) if case_path.lower().endswith(".foam") else case_path
+        return openfoam_loader.load_openfoam(cp), "vendored-vtk"
+    sg2 = os.environ.get("SIMGRAPH2_ROOT", r"D:/Git/SimGraph2")
+    if not os.path.isdir(sg2):
+        raise RuntimeError(f"该格式需 Romtek，但 SIMGRAPH2_ROOT 不可用：{sg2}")
+    sys.path.insert(0, sg2)
+    try:
+        os.chdir(sg2)
+    except Exception:
+        pass
+    from post_engine.engine import PostEngine  # type: ignore
+    eng = PostEngine()
+    r = eng.load_file("render", case_path)
+    if isinstance(r, dict) and r.get("error"):
+        raise RuntimeError(r["error"])
+    return eng.session_mgr.get("render").post_data.get_vtk_data(), "simgraph2-romtek"
+
+
+def _render_turntable(case_path: str, out_dir: str, n_frames: int) -> dict:
+    """绕轴 n 帧（供前端拖拽轨道旋转）；缩略图渲染始终用平台自有 vendored 代码。"""
+    try:
+        mb, engine = _load_mb(case_path)
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": str(e)[:200]}
+    vsr = _vendored_render()
+    try:
+        n = vsr.render_turntable(mb, out_dir, n_frames=n_frames)
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"turntable 渲染失败：{e}"}
+    if not n:
+        return {"ok": False, "error": "未挑到可渲染的物面"}
+    imgs = sorted(os.path.basename(p) for p in glob.glob(os.path.join(out_dir, "turn_*.png")))
+    return {"ok": True, "images": imgs, "frames": len(imgs), "engine": engine, "mode": "turntable"}
+
+
 def main() -> None:
     if len(sys.argv) < 3:
-        _emit({"ok": False, "error": "usage: render_runner.py <case> <out> [scalar]"})
+        _emit({"ok": False, "error": "usage: render_runner.py <case> <out> [scalar|mode]"})
         return
     case_path, out_dir = sys.argv[1], sys.argv[2]
-    scalar = sys.argv[3] if len(sys.argv) > 3 else "T"
+    arg3 = sys.argv[3] if len(sys.argv) > 3 else "T"
     os.makedirs(out_dir, exist_ok=True)
     try:
-        if _is_openfoam(case_path):
-            _emit(_render_openfoam(case_path, out_dir, scalar))
+        if arg3.startswith("turntable"):     # turntable:24
+            n = 24
+            if ":" in arg3:
+                try:
+                    n = max(6, min(48, int(arg3.split(":", 1)[1])))
+                except ValueError:
+                    n = 24
+            _emit(_render_turntable(case_path, out_dir, n))
+        elif _is_openfoam(case_path):
+            _emit(_render_openfoam(case_path, out_dir, arg3))
         else:
-            _emit(_render_via_simgraph2(case_path, out_dir, scalar))
+            _emit(_render_via_simgraph2(case_path, out_dir, arg3))
     except Exception as e:  # noqa: BLE001
         _emit({"ok": False, "error": f"渲染失败：{e}"})
 
