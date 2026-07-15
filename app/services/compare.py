@@ -120,6 +120,54 @@ def compare_operating_point(
                          rows=rows, ranking=ranking)
 
 
+def cross_compare(op_key: str, quantities: list[dict], cv_flag: float = 5.0) -> dict:
+    """无实验真值时的多源交叉对比：以各源均值为共识基准，算逐项离散度 + 离群单位。
+
+    quantities: [{"quantity","unit_dim","sources":[SourceValue,...]}]（无 truth）
+    返回可 JSON 化 dict（mode="consensus"）。
+    """
+    rows = []
+    unit_devs: dict[str, list[float]] = {}
+    unit_case: dict[str, str] = {}
+    outlier_votes: dict[str, int] = {}
+    for q in quantities:
+        srcs = q["sources"]
+        if len(srcs) < 2:
+            continue
+        vals = [s.value for s in srcs]
+        mean = sum(vals) / len(vals)
+        std = (sum((v - mean) ** 2 for v in vals) / len(vals)) ** 0.5
+        cv = (std / abs(mean) * 100.0) if mean else 0.0
+        row_sources, far_unit, far_ad = [], None, -1.0
+        for s in srcs:
+            dev = (s.value - mean) / abs(mean) * 100.0 if mean else 0.0
+            row_sources.append({"unit": s.unit, "case": s.case, "value": s.value,
+                                "deviation_pct": round(dev, 2)})
+            unit_devs.setdefault(s.unit, []).append(abs(dev))
+            unit_case[s.unit] = s.case
+            if abs(dev) > far_ad:
+                far_ad, far_unit = abs(dev), s.unit
+        if cv > cv_flag and far_unit:
+            outlier_votes[far_unit] = outlier_votes.get(far_unit, 0) + 1
+        rows.append({"quantity": q["quantity"], "unit_dim": q.get("unit_dim", ""),
+                     "mean": round(mean, 4), "std": round(std, 4), "cv_pct": round(cv, 2),
+                     "sources": row_sources, "far_unit": far_unit if cv > cv_flag else None,
+                     "status": "关注" if cv > cv_flag else "一致"})
+    consensus = []
+    for unit, devs in unit_devs.items():
+        consensus.append({"unit": unit, "case": unit_case.get(unit, ""),
+                          "avg_dev_from_mean": round(sum(devs) / len(devs), 2), "n": len(devs)})
+    consensus.sort(key=lambda x: x["avg_dev_from_mean"])
+    outlier = None
+    if outlier_votes:
+        top = max(outlier_votes.items(), key=lambda kv: kv[1])
+        outlier = top[0] if top[1] >= 2 else None
+    avg_cv = round(sum(r["cv_pct"] for r in rows) / len(rows), 2) if rows else 0.0
+    return {"mode": "consensus", "operating_point": op_key, "rows": rows,
+            "consensus": consensus, "outlier_unit": outlier, "avg_cv": avg_cv,
+            "n_units": len(unit_devs), "n_quantities": len(rows)}
+
+
 def compare_result_to_dict(res: CompareResult) -> dict:
     """序列化为前端可用结构。"""
     return {

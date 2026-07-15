@@ -379,6 +379,13 @@
   .msrow .nm{color:var(--text);font-weight:600}
   .msrow .u{color:var(--text-3)}
   .msrow .s{color:var(--text-3);font-size:11px;margin-left:auto;font-family:var(--mono)}
+  /* 偏差条形图 */
+  .barchart{display:flex;flex-direction:column;gap:6px;margin:8px 0 4px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface)}
+  .barrow{display:flex;align-items:center;gap:10px;font-size:12px}
+  .barlbl{width:88px;flex:none;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right}
+  .bartrack{flex:1;height:14px;background:var(--surface-2);border-radius:7px;overflow:hidden}
+  .bar{height:100%;border-radius:7px;transition:width .3s}
+  .barval{width:70px;flex:none;font-family:var(--mono);color:var(--text)}
   .ing-step{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:5px 2px;color:var(--text-2)}
   .ing-step b{color:var(--text);font-weight:600;min-width:120px}
   .ing-step .ing-ic{width:16px;display:inline-flex;justify-content:center}
@@ -535,17 +542,10 @@
     <section class="screen on" data-screen="compare">
       <div class="crumbs">评估工作台 / <b>对比评估</b></div>
       <div class="page-head">
-        <div><h1>对比评估</h1><p class="sub">XF-2 双模态冲压发动机 · 直连试验多源比对 · 参照试车03实验真值</p></div>
-        <div class="spacer"></div>
-        <div class="seg" id="cmp-seg"><button class="on" data-view="l3">按工况对比</button><button data-view="l2">按算例对比</button><button data-view="l1">按单位对比</button></div>
+        <div><h1>对比评估</h1><p class="sub">多源比对评判层 · 同工况下仿真对实验真值（或无真值时多源共识）比对：逐项偏差 · 排名 · 可视化</p></div>
       </div>
 
-      <div class="ctxbar">
-        <span>📌</span><b>XF-2 双模态冲压</b><span class="sep">|</span>Ma 6.0 · 动压 60 kPa · 总温 1650 K<span class="sep">|</span>参照 <b>试车03</b><span class="sep">|</span>8 项 QOI · 3 家参评
-        <span class="spacer"></span><span style="color:var(--text-3);font-family:var(--mono);font-size:11.5px">EVAL-2026-0714-03</span>
-      </div>
-
-      <!-- L3 -->
+      <!-- L3（真实：liveCompare 按工况 + 真值/共识两模式填充） -->
       <div data-cview="l3">
         <div style="display:flex;align-items:center;gap:10px;margin:4px 0 9px"><div class="sect-label" style="margin:0">评估结论 · 单位排名</div><span class="spacer"></span><span class="chip">工况 <b>Ma6-60kPa</b> ▾</span><span class="chip">物理量 <b>8 项</b> ▾</span><button class="btn primary sm" data-go="report">生成评估报告 →</button></div>
 
@@ -605,38 +605,6 @@
         </div>
       </div>
 
-      <!-- L2 -->
-      <div data-cview="l2" style="display:none">
-        <div class="tblwrap">
-          <table>
-            <thead><tr><th>评估维度</th><th>西工大 case4</th><th>航天六院 caseZ</th><th>北航 caseX</th><th>结论</th></tr></thead>
-            <tbody>
-              <tr class="stripe ok"><td class="qty">收敛性</td><td><span class="badge b-good">✓ 3.4 阶</span></td><td><span class="badge b-good">✓ 3.2 阶</span></td><td><span class="badge b-good">✓ 3.1 阶</span></td><td class="winner">均收敛</td></tr>
-              <tr class="stripe ok"><td class="qty">网格质量</td><td class="num">12.0M · y+35 <span class="badge b-high">优</span></td><td class="num">8.0M · y+55 <span class="badge b-med">良</span></td><td class="num">6.4M · y+88 <span class="badge b-low">粗</span></td><td class="winner">西工大 <b>最优</b></td></tr>
-              <tr class="stripe warn"><td class="qty">QOI 合理性</td><td><span class="badge b-good">6/6 正常</span></td><td><span class="badge b-good">6/6 正常</span></td><td><span class="badge b-warn">4/6 · 2 异常</span></td><td class="winner">西工大 <b>最优</b></td></tr>
-              <tr class="stripe ok"><td class="qty">与实验平均偏差</td><td class="num" style="color:var(--good)">1.4%</td><td class="num" style="color:var(--good)">2.4%</td><td class="num" style="color:var(--warn)">7.9%</td><td class="winner">西工大 <b>最优</b></td></tr>
-              <tr class="stripe ok"><td class="qty">解析置信度</td><td><span class="badge b-high"><span class="d"></span>HIGH</span></td><td><span class="badge b-high"><span class="d"></span>HIGH</span></td><td><span class="badge b-med"><span class="d"></span>MED</span></td><td class="winner">—</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <p class="note">点算例名 → 下钻「仿真分析 · 单算例」详情页。多算例并排对比亦见「仿真分析 · 多算例对比」。</p>
-      </div>
-
-      <!-- L1 -->
-      <div data-cview="l1" style="display:none">
-        <p class="sub" style="margin:0 0 14px">甲方汇报层 · 单位批次整体评级（由 L2/L3 加权聚合，权重可配置）</p>
-        <div class="tblwrap">
-          <table>
-            <thead><tr><th>批次</th><th>收敛性</th><th>网格质量</th><th>与实验吻合</th><th>QOI 通过率</th><th class="num">综合评级</th></tr></thead>
-            <tbody>
-              <tr class="stripe ok"><td class="qty">西工大 2026Q1</td><td><span class="dots"><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i></i></span></td><td><span class="dots"><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i></span></td><td class="num" style="color:var(--good)">2.1%</td><td class="num">100%</td><td class="num"><span class="grade a">A−</span></td></tr>
-              <tr class="stripe warn"><td class="qty">航天六院 2026Q1</td><td><span class="dots"><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i></i></span></td><td><span class="dots"><i class="f"></i><i class="f"></i><i class="f"></i><i></i><i></i></span></td><td class="num" style="color:var(--good)">3.1%</td><td class="num">100%</td><td class="num"><span class="grade b">B+</span></td></tr>
-              <tr class="stripe crit"><td class="qty">北航 2026Q1</td><td><span class="dots"><i class="f"></i><i class="f"></i><i class="f"></i><i></i><i></i></span></td><td><span class="dots"><i class="f"></i><i class="f"></i><i></i><i></i><i></i></span></td><td class="num" style="color:var(--warn)">9.8%</td><td class="num" style="color:var(--warn)">67%</td><td class="num"><span class="grade c">B</span></td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="toolbar" style="margin-top:14px"><button class="btn sm" data-cview-go="l2">下钻到算例对比 →</button><button class="btn sm" data-cview-go="l3">下钻到工况对比 →</button><button class="btn primary sm" data-go="report">导出评级报告</button></div>
-      </div>
     </section>
 
     <!-- ================= LIBRARY ================= -->
@@ -1356,8 +1324,7 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
   document.addEventListener('click', e=>{ const t=e.target.closest('[data-go]'); if(t) go(t.dataset.go); });
 
   // compare view toggle
-  $('#cmp-seg').addEventListener('click', e=>{ const b=e.target.closest('button'); if(!b) return; $$('#cmp-seg button').forEach(x=>x.classList.toggle('on', x===b)); const v=b.dataset.view; $$('[data-cview]').forEach(el=>el.style.display = el.dataset.cview===v?'':'none'); });
-  $$('[data-cview-go]').forEach(b=>b.addEventListener('click',()=>{ const v=b.dataset.cviewGo; $$('#cmp-seg button').forEach(x=>x.classList.toggle('on', x.dataset.view===v)); $$('[data-cview]').forEach(el=>el.style.display = el.dataset.cview===v?'':'none'); }));
+  // 对比评估三视图切换已下线（只保留真实的按工况对比，L2/L1 死 mock 已删）
 
   // subtabs (sim/exp)
   $$('.subtabs').forEach(group=>{
@@ -1526,42 +1493,62 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
     flush(); return html||'<p></p>';
   }
 
+  // 横向条形图（偏差可视化）
+  function barChart(items, suffix){
+    var mx=Math.max.apply(null, items.map(function(i){return Math.abs(i.value)||0;}))||1;
+    return '<div class="barchart">'+items.map(function(i){ var w=Math.min(100,Math.abs(i.value)/mx*100);
+      return '<div class="barrow"><span class="barlbl" title="'+i.label+'">'+i.label+'</span><div class="bartrack"><div class="bar" style="width:'+w.toFixed(1)+'%;background:'+i.color+'"></div></div><span class="barval">'+i.value+(suffix||'')+'</span></div>'; }).join('')+'</div>';
+  }
+  function devColor3(ad){ return ad<=3?'var(--good)':(ad<=10?'var(--warn)':'var(--crit)'); }
+
   async function liveCompare(){
     var l3=document.querySelector('[data-cview="l3"]'); if(!l3) return;
-    var cases=((await getJSON(API+'/cases'))||{}).cases||[];
-    if(cases===null) return;  // 无后端→保持 mock
+    var cases=((await getJSON(API+'/cases'))||{}).cases; if(cases===null) return;
+    cases=cases||[];
     var ops=[]; cases.forEach(function(c){ if(c.operating_point && c.operating_point!=='__UNALIGNED__' && ops.indexOf(c.operating_point)<0) ops.push(c.operating_point); });
     var head=document.querySelector('[data-screen="compare"] .page-head h1');
     var mockCtx=document.querySelector('[data-screen="compare"] .ctxbar'); if(mockCtx) mockCtx.style.display='none';
-    var seg=document.getElementById('cmp-seg'); if(seg) seg.style.display='none';  // 仅 L3 为真数据
-    var l2=document.querySelector('[data-cview="l2"]'), l1=document.querySelector('[data-cview="l1"]');
     if(!ops.length){
       if(head) head.textContent='对比评估';
-      l3.innerHTML='<div class="placeholder" style="text-align:center;padding:36px"><div style="font-size:14px;margin-bottom:8px">暂无可对比数据</div><div style="font-size:12.5px;color:var(--text-3);margin-bottom:16px">多源对比要求各单位算例对齐到<b>同一工况</b>。请在「数据资源库」入库并对齐工况，或写入演示场景快速体验。</div><button class="btn primary sm" id="cmp-seed">写入演示场景（XF-2 Ma6-60kPa）</button></div>';
-      if(l2) l2.style.display='none'; if(l1) l1.style.display='none';
+      l3.innerHTML='<div class="placeholder" style="text-align:center;padding:36px"><div style="font-size:14px;margin-bottom:8px">暂无可对比数据</div><div style="font-size:12.5px;color:var(--text-3);margin-bottom:16px">多源对比要求算例对齐到<b>同一工况</b>。请在「数据资源库」入库并对齐工况，或写入演示场景快速体验。</div><button class="btn primary sm" id="cmp-seed">写入演示场景（XF-2 Ma6-60kPa）</button></div>';
       var sb=document.getElementById('cmp-seed'); if(sb) sb.addEventListener('click', async function(){ sb.textContent='写入中…'; await fetch(API+'/seed',{method:'POST'}); liveCompare(); liveCases(); liveUnits(); liveReport(); });
       markLive(); return;
     }
-    var op=ops[0];
-    var d=await getJSON(API+'/compare/operating-point/'+encodeURIComponent(op));
-    if(!d||!d.ranking||!d.ranking.length){
-      if(head) head.textContent='对比评估 · '+op;
-      l3.innerHTML='<div class="placeholder" style="text-align:center;padding:36px">工况 '+op+' 下缺实验真值或仿真源，无法对比（需同工况下既有实验真值、又有仿真交付）。</div>';
-      markLive(); return;
+    ops.sort();
+    function opBar(cur){ return '<div class="toolbar" style="margin:2px 0 10px"><span class="chip">工况：<select id="cmp-op" class="model-pick" style="font-size:12.5px">'+ops.map(function(o){return '<option value="'+o+'"'+(o===cur?' selected':'')+'>'+o+'</option>';}).join('')+'</select></span><span id="cmp-mode" class="chip"></span><div class="spacer"></div><button class="btn primary sm" data-go="report">生成评估报告 →</button></div>'; }
+
+    async function renderOp(op){
+      if(head) head.textContent='对比评估 · 工况 '+op;
+      l3.innerHTML=opBar(op)+'<div class="placeholder">对比中…</div>';
+      var d=await getJSON(API+'/compare/operating-point/'+encodeURIComponent(op));
+      var mchip=document.getElementById('cmp-mode');
+      if(!d||d.mode==='none'||(!d.ranking&&!d.rows)){ l3.innerHTML=opBar(op)+'<div class="placeholder" style="padding:30px">'+((d&&d.reason)||'无可对比数据')+'</div>'; bindOp(); markLive(); return; }
+      var html=opBar(op);
+      if(d.mode==='truth'){
+        if(mchip) mchip.textContent='真值模式 · 参照 '+d.truth_source;
+        var units=d.ranking.map(function(r){return r.unit;});
+        // 排名条形图
+        html+='<div class="sect-label">各单位平均偏差（越短越准 · 相对实验真值）</div>'+barChart(d.ranking.map(function(r){return {label:r.unit,value:r.avg_deviation,color:devColor3(r.avg_deviation)};}),'%');
+        html+='<div class="sect-label">评估结论 · 单位排名</div><div class="tblwrap"><table><thead><tr><th style="width:52px">排名</th><th>承研单位 · 算例</th><th class="num">平均偏差</th><th class="num">QOI 达标</th><th>综合评级</th></tr></thead><tbody>'+
+          d.ranking.map(function(r){ var first=r.rank===1?' first':''; return '<tr><td><span class="rkn'+first+'">'+r.rank+'</span></td><td class="qty">'+r.unit+' · '+r.case+'</td><td class="num" style="color:'+devColor3(r.avg_deviation)+'">'+r.avg_deviation+'%</td><td class="num">'+r.n_pass+' / '+r.n_total+'</td><td><span class="grade '+gc(r.grade)+'" style="font-size:16px">'+r.grade+'</span></td></tr>'; }).join('')+'</tbody></table></div>';
+        html+='<div class="sect-label">逐项物理量偏差 · 相对实验真值（<span style="color:var(--accent)">蓝</span>=最接近）</div><div class="tblwrap"><table><thead><tr><th>物理量</th><th class="num">实验真值</th>'+units.map(function(u){return '<th class="num">'+u+'</th>';}).join('')+'<th>状态</th></tr></thead><tbody>'+
+          d.rows.map(function(row){ var tds=units.map(function(u){ var s=row.sources.filter(function(x){return x.unit===u;})[0]; if(!s) return '<td class="num">—</td>'; var ad=Math.abs(s.deviation_pct); var dc=ad<=3?'ok':(ad<=10?'hi':'bad'); return '<td class="num"><span class="cell-val'+(s.best?' lead':'')+'">'+s.value+'</span><span class="cell-dev '+dc+'">'+(s.deviation_pct>0?'+':'')+s.deviation_pct+'%</span></td>'; }).join('');
+            var st=row.status==='正常'?'<span class="badge b-good">正常</span>':'<span class="badge b-warn">'+row.status+'</span>';
+            return '<tr class="stripe '+(row.status==='正常'?'ok':'warn')+'"><td class="qty">'+row.quantity+' <small style="color:var(--text-3)">'+(row.unit_dim||'')+'</small></td><td class="num">'+row.truth+'</td>'+tds+'<td>'+st+'</td></tr>'; }).join('')+'</tbody></table></div>';
+      } else { // consensus
+        if(mchip){ mchip.textContent='多源交叉对比 · 无实验真值'; mchip.style.color='var(--warn)'; }
+        var us=d.consensus.map(function(c){return c.unit;});
+        html+='<div class="relbanner" style="border-left-color:var(--warn);background:var(--pending-bg)"><span class="ic">ℹ️</span><div><b>该工况无实验真值</b>，改用<b>多源交叉对比</b>：以各家均值为共识基准，看谁离共识近、谁离群。<b>不评级</b>（无真值不宜定优劣，仅看一致性）。要正式评级请补入该工况的实验真值。</div></div>';
+        html+='<div class="sect-label">各单位平均"离共识"程度（越短越贴近多数）</div>'+barChart(d.consensus.map(function(c){return {label:c.unit,value:c.avg_dev_from_mean,color:c.unit===d.outlier_unit?'var(--crit)':'var(--u1)'};}),'%');
+        html+='<div class="stat-row" style="margin:6px 0"><div class="stat"><div class="k">参评单位</div><div class="v">'+d.n_units+'</div></div><div class="stat"><div class="k">物理量</div><div class="v">'+d.n_quantities+'</div></div><div class="stat"><div class="k">平均离散 CV</div><div class="v" style="color:'+(d.avg_cv<=10?'var(--good)':'var(--warn)')+'">'+d.avg_cv+'<small>%</small></div></div><div class="stat"><div class="k">离群单位</div><div class="v" style="color:'+(d.outlier_unit?'var(--warn)':'var(--good)')+';font-size:14px">'+(d.outlier_unit||'无')+'</div></div></div>';
+        html+='<div class="sect-label">逐项多源离散 · 均值±σ / CV（相对共识均值）</div><div class="tblwrap"><table><thead><tr><th>物理量</th>'+us.map(function(u){return '<th class="num">'+u+(u===d.outlier_unit?' ⚠':'')+'</th>';}).join('')+'<th class="num">均值±σ</th><th class="num">CV</th><th>判定</th></tr></thead><tbody>'+
+          d.rows.map(function(row){ var tds=us.map(function(u){ var s=row.sources.filter(function(x){return x.unit===u;})[0]; if(!s) return '<td class="num">—</td>'; var ad=Math.abs(s.deviation_pct); return '<td class="num"'+(row.far_unit===u?' style="color:var(--warn)"':'')+'><span class="cell-val">'+s.value+'</span><span class="cell-dev '+(ad<=5?'ok':(ad<=15?'hi':'bad'))+'">'+(s.deviation_pct>0?'+':'')+s.deviation_pct+'%</span></td>'; }).join('');
+            return '<tr class="stripe '+(row.status==='一致'?'ok':'warn')+'"><td class="qty">'+row.quantity+' <small style="color:var(--text-3)">'+(row.unit_dim||'')+'</small></td>'+tds+'<td class="num">'+row.mean+' ± '+row.std+'</td><td class="num" style="color:'+(row.cv_pct<=10?'var(--good)':'var(--warn)')+'">'+row.cv_pct+'%</td><td><span class="badge '+(row.status==='一致'?'b-good':'b-warn')+'">'+row.status+'</span></td></tr>'; }).join('')+'</tbody></table></div>';
+      }
+      l3.innerHTML=html; bindOp(); markLive();
     }
-    if(head) head.textContent='对比评估 · 工况 '+op;
-    var units=d.ranking.map(function(r){return r.unit;});
-    var rk='<div class="sect-label" style="margin:4px 0 9px">评估结论 · 单位排名（实时）</div><div class="tblwrap"><table><thead><tr><th style="width:56px">排名</th><th>承研单位 · 算例</th><th class="num">平均偏差</th><th class="num">QOI 达标</th><th class="num">综合评级</th></tr></thead><tbody>'+
-      d.ranking.map(function(r){ var first=r.rank===1?' first':''; var col=r.avg_deviation<=3?'var(--good)':(r.avg_deviation<=10?'var(--warn)':'var(--crit)'); return '<tr><td><span class="rkn'+first+'">'+r.rank+'</span></td><td class="qty">'+r.unit+' · '+r.case+'</td><td class="num" style="color:'+col+'">'+r.avg_deviation+'%</td><td class="num">'+r.n_pass+' / '+r.n_total+'</td><td class="num"><span class="grade '+gc(r.grade)+'" style="font-size:16px">'+r.grade+'</span></td></tr>'; }).join('')+'</tbody></table></div>';
-    var rows='<div class="sect-label">逐项物理量偏差 · 相对实验真值（实时 · <span style="color:var(--accent)">蓝色</span>=最接近）</div><div class="tblwrap"><table><thead><tr><th>物理量</th><th class="num">实验真值</th>'+units.map(function(u){return '<th class="num">'+u+'</th>';}).join('')+'<th>状态</th></tr></thead><tbody>'+
-      d.rows.map(function(row){
-        var tds=units.map(function(u){ var s=row.sources.filter(function(x){return x.unit===u;})[0]; if(!s) return '<td class="num">—</td>'; var ad=Math.abs(s.deviation_pct); var dc=ad<=3?'ok':(ad<=10?'hi':'bad'); return '<td class="num"><span class="cell-val'+(s.best?' lead':'')+'">'+s.value+'</span><span class="cell-dev '+dc+'">'+(s.deviation_pct>0?'+':'')+s.deviation_pct+'%</span></td>'; }).join('');
-        var st=row.status==='正常'?'<span class="badge b-good">正常</span>':'<span class="badge b-warn">'+row.status+'</span>';
-        return '<tr class="stripe '+(row.status==='正常'?'ok':'warn')+'"><td class="qty">'+row.quantity+' <small style="color:var(--text-3)">'+(row.unit_dim||'')+'</small></td><td class="num">'+row.truth+'</td>'+tds+'<td>'+st+'</td></tr>';
-      }).join('')+'</tbody></table></div>';
-    var foot='<div class="sect-label">对比说明</div><div class="ctxbar" style="margin:0"><span>📌</span>工况 <b>'+op+'</b><span class="sep">|</span>参照 <b>'+d.truth_source+'</b><span class="sep">|</span>参评 '+units.length+' 家 · '+d.rows.length+' 项 QOI<span class="spacer"></span><button class="btn primary sm" data-go="report">生成评估报告 →</button></div>';
-    l3.innerHTML = rk + rows + foot;
-    markLive();
+    function bindOp(){ var s=document.getElementById('cmp-op'); if(s) s.addEventListener('change', function(){ renderOp(s.value); }); }
+    renderOp(ops[0]);
   }
 
   function thumb(kind){ return kind==='experiment'

@@ -12,23 +12,23 @@ from app.db.models import (
 )
 from app.services.compare import (
     compare_operating_point, compare_result_to_dict, SourceValue, CompareResult,
+    cross_compare,
 )
 
 
-def assemble_compare(db: Session, op_key: str) -> CompareResult | None:
-    """把某工况下的库内测量装配成对比输入并评分。无数据返回 None。"""
+def _aggregate(db: Session, op_key: str):
+    """收集某工况下库内测量：{qkey:{name,unit,truth,sources}} + truth_source。无数据返回 (None,None)。"""
     op = db.execute(
         select(OperatingPoint).where(OperatingPoint.canonical_key == op_key)
     ).scalar_one_or_none()
     if op is None:
-        return None
+        return None, None
     links = db.execute(
         select(CaseOperatingLink).where(CaseOperatingLink.op_id == op.id)
     ).scalars().all()
     case_ids = [lk.case_id for lk in links]
     if not case_ids:
-        return None
-
+        return None, None
     truth_source = None
     agg: dict[str, dict] = {}
     for cid in case_ids:
@@ -43,7 +43,14 @@ def assemble_compare(db: Session, op_key: str) -> CompareResult | None:
                 truth_source = case.name
             else:
                 slot["sources"].append(SourceValue(unit=unit, case=case.name, value=m.value))
+    return agg, truth_source
 
+
+def assemble_compare(db: Session, op_key: str) -> CompareResult | None:
+    """有实验真值的评判（真值模式）。无真值/无数据返回 None。"""
+    agg, truth_source = _aggregate(db, op_key)
+    if not agg:
+        return None
     quantities = [
         {"quantity": v["name"], "unit_dim": v["unit"], "truth": v["truth"], "sources": v["sources"]}
         for v in agg.values() if v["truth"] is not None and v["sources"]
@@ -51,6 +58,29 @@ def assemble_compare(db: Session, op_key: str) -> CompareResult | None:
     if not quantities:
         return None
     return compare_operating_point(op_key, truth_source or "实验", quantities)
+
+
+def assemble_evaluation(db: Session, op_key: str) -> dict | None:
+    """对比评估统一入口：有实验真值→真值模式(排名评级)；否则多源交叉对比(共识/离散度)。
+
+    返回带 mode 的 dict（truth / consensus），无可比数据返回 None。
+    """
+    res = assemble_compare(db, op_key)
+    if res is not None:
+        d = compare_result_to_dict(res)
+        d["mode"] = "truth"
+        return d
+    # 无真值 → 若同工况有 ≥2 家仿真，做共识对比
+    agg, _ = _aggregate(db, op_key)
+    if not agg:
+        return None
+    quantities = [
+        {"quantity": v["name"], "unit_dim": v["unit"], "sources": v["sources"]}
+        for v in agg.values() if len(v["sources"]) >= 2
+    ]
+    if not quantities:
+        return None
+    return cross_compare(op_key, quantities)
 
 
 def build_report(db: Session, op_key: str, engine_name: str = "被评发动机") -> dict:
