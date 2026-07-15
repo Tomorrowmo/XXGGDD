@@ -47,6 +47,14 @@ export PYTHONIOENCODING=utf-8    # Windows 终端中文防乱码
 
 **至此 ①–⑤ 全部接真**（89 pytest 全过）。前端所有主功能无 mock 回退，无数据一律诚实空状态。
 
+## UI/可用性增强（2026-07-15，109 pytest 全过）
+- **切片上色修复**：`render_runner._detect_scalars` 扫算例真实标量场按物理优先级（马赫>温度>压力>密度>速度）挑，气动 CGNS（场名 Mach/Density）不再渲成灰网格。
+- **列表缩略图用真实切片**：`/api/v2/cases/{id}/thumbnail`（仅取已缓存切片不触发渲染）+ 前端 `liveCases` 换 img。
+- **入库进度流式**：`POST /ingest/file/stream`（SSE，`ingest.ingest_steps` 生成器逐步 识别→去重→解析→对齐→写库→切片）+ 前端步骤动画；仿真入库顺带出切片（缩略图即时可用）。
+- **服务器文件浏览器**：`GET /api/v2/fs/list`（整机盘符可浏，标注可入库项）+ 入库弹窗「📂 浏览」选路径。
+- **结构化工况输入**：PENDING 面板改「下拉选已有工况（保证 key 一致）/ 新建填 Ma·动压·攻角」；`canonical_key_from_params` 增攻角→`Ma1.2-AoA10.5`；`GET /operating-points`、`POST /operating-points/preview-key`、`assign-op` 支持传 params 由后端推 key。
+- 新增测试：`test_render_vendored`(5)、`test_thumbnail_api`(3)、`test_ingest_stream`(3)、`test_fs_api`(4)、`test_operating_points_api`(5)。
+
 前端"实时接线"逻辑都在 `docs/prototype.html` 末尾一个 IIFE 里：`liveCompare/liveCases/liveUnits/liveReport/liveNL/liveLLM/liveChat/liveExp/liveSim`，无后端时优雅回退 mock（探测 `/api/v2/cases` 是否可达）。主脚本的全局函数（openDrawer/refreshSel/go/toast/nlQuery）被 live 脚本覆盖或复用。
 
 ## Git / 安全

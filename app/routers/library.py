@@ -193,8 +193,38 @@ def list_pending(db: Session = Depends(get_db)):
     return {"pending": out}
 
 
+@router.get("/operating-points")
+def list_operating_points(db: Session = Depends(get_db)):
+    """已有工况列表（供人工对齐下拉，选已有=保证 canonical_key 一致）。"""
+    ops = db.execute(select(OperatingPoint)).scalars().all()
+    out = []
+    for op in ops:
+        if op.canonical_key == "__UNALIGNED__":
+            continue
+        n = db.execute(
+            select(func.count(CaseOperatingLink.id)).where(
+                CaseOperatingLink.op_id == op.id,
+                CaseOperatingLink.mapping_confidence != Confidence.PENDING)
+        ).scalar_one()
+        out.append({"canonical_key": op.canonical_key, "params": op.params or {}, "n_cases": n})
+    out.sort(key=lambda x: x["canonical_key"])
+    return {"operating_points": out}
+
+
+class PreviewKeyReq(BaseModel):
+    params: dict
+
+
+@router.post("/operating-points/preview-key")
+def preview_key(req: PreviewKeyReq):
+    """由结构化参数预览规范键（前端填 Ma/动压/攻角时实时显示）。"""
+    key = op_svc.canonical_key_from_params(req.params)
+    return {"canonical_key": key, "ok": key is not None,
+            "reason": None if key else "至少需要马赫数 Ma"}
+
+
 class AssignOpReq(BaseModel):
-    canonical_key: str
+    canonical_key: str | None = None
     params: dict | None = None
 
 
@@ -203,6 +233,10 @@ def assign_op(link_id: int, req: AssignOpReq, db: Session = Depends(get_db)):
     lk = db.get(CaseOperatingLink, link_id)
     if lk is None:
         raise HTTPException(404, "对齐记录不存在")
-    op_svc.assign_op_manual(db, lk, req.canonical_key, req.params)
+    # 优先用显式 canonical_key（选已有）；否则由结构化参数推导（新建）
+    key = (req.canonical_key or "").strip() or op_svc.canonical_key_from_params(req.params)
+    if not key:
+        raise HTTPException(400, "需指定工况：选已有 canonical_key，或提供含 Ma 的结构化参数")
+    op_svc.assign_op_manual(db, lk, key, req.params)
     db.commit()
-    return {"ok": True, "op": req.canonical_key}
+    return {"ok": True, "op": key}

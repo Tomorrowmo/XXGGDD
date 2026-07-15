@@ -16,17 +16,25 @@ from app.db.models import (
 
 
 def canonical_key_from_params(params: dict | None) -> str | None:
-    """由工况物理参数推出规范键，如 {Ma:6.0, dyn_pressure_kpa:60} → 'Ma6-60kPa'。"""
+    """由工况物理参数推出规范键。
+
+    发动机/冲压：{Ma:6.0, dyn_pressure_kpa:60} → 'Ma6-60kPa'
+    气动外流：  {Ma:1.2, aoa:10.5} → 'Ma1.2-AoA10.5'
+    两者可并存：'Ma6-60kPa-AoA5'。只有 Ma 是必需项。
+    """
     if not params:
         return None
     ma = params.get("Ma") or params.get("mach") or params.get("mach_number")
     q = params.get("dyn_pressure_kpa") or params.get("dynamic_pressure") or params.get("q_kpa")
+    aoa = params.get("aoa") or params.get("AoA") or params.get("attack_angle") or params.get("alpha")
     if ma is None:
         return None
-    ma_s = f"Ma{float(ma):g}"
+    key = f"Ma{float(ma):g}"
     if q is not None:
-        return f"{ma_s}-{int(round(float(q)))}kPa"
-    return ma_s
+        key += f"-{int(round(float(q)))}kPa"
+    if aoa is not None:
+        key += f"-AoA{float(aoa):g}"
+    return key
 
 
 def canonical_key_from_name(name: str) -> str | None:
