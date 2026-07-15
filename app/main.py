@@ -32,6 +32,7 @@ from app.routers import llm_config as llm_config_router
 from app.routers import chat_v2 as chat_v2_router
 from app.routers import analysis as analysis_router
 from app.routers import config as config_router
+from app.routers import fs as fs_router
 from app.services import config_store
 from app.db import init_db
 from contextlib import asynccontextmanager
@@ -85,6 +86,7 @@ app.include_router(search_router.router)
 app.include_router(llm_config_router.router)
 app.include_router(chat_v2_router.router)
 app.include_router(config_router.router)
+app.include_router(fs_router.router)
 
 
 @app.get("/")

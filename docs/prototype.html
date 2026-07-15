@@ -375,6 +375,17 @@
   .ing-step .ing-det{color:var(--text-3);font-size:11.5px}
   .ing-spin{width:11px;height:11px;border:2px solid var(--border-strong);border-top-color:var(--accent);border-radius:50%;display:inline-block;animation:ing-rot .7s linear infinite}
   @keyframes ing-rot{to{transform:rotate(360deg)}}
+  .fb-bar{display:flex;gap:8px;align-items:center;margin-bottom:10px}
+  .fb-cwd{font-family:var(--mono);font-size:12px;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;direction:rtl;text-align:left}
+  .fb-list{max-height:360px;overflow:auto;border:1px solid var(--border);border-radius:8px;background:var(--surface)}
+  .fb-item{display:flex;align-items:center;gap:9px;padding:7px 11px;font-size:12.5px;cursor:pointer;border-bottom:1px solid var(--border);color:var(--text-2)}
+  .fb-item:last-child{border-bottom:0}
+  .fb-item:hover{background:var(--surface-2)}
+  .fb-item .fb-nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .fb-item .fb-sz{color:var(--text-3);font-size:11px;font-family:var(--mono)}
+  .fb-item.dim{opacity:.5;cursor:default}
+  .fb-dot{width:7px;height:7px;border-radius:50%;background:var(--good);flex:none}
+  .fb-pick{font-size:11px;padding:2px 8px;border:1px solid var(--accent);color:var(--accent);border-radius:6px;background:transparent;cursor:pointer}
 
   /* ============ CHAT ============ */
   .chat{display:grid;grid-template-columns:230px 1fr;gap:0;height:100%;width:100%;border:1px solid var(--border);border-radius:var(--r);overflow:hidden;background:var(--surface)}
@@ -1279,12 +1290,26 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
     <div style="display:flex;flex-direction:column;gap:11px">
       <label class="fld"><span>单位</span><input id="ing-unit" placeholder="如 西工大 / 北航 / 试车台"></label>
       <label class="fld"><span>交付批次</span><input id="ing-delivery" value="2026Q1 交付"></label>
-      <label class="fld"><span>数据路径</span><input id="ing-path" placeholder="D:/data/xxx.txt 或 D:/Git/SimGraph2/test_data/DLR_A_LTS"></label>
+      <div class="fld"><span>数据路径</span><span style="display:flex;gap:6px;flex:1"><input id="ing-path" placeholder="D:/data/xxx.txt 或 D:/Git/SimGraph2/test_data/DLR_A_LTS" style="flex:1"><button type="button" class="btn sm" id="ing-browse" style="white-space:nowrap">📂 浏览</button></span></div>
       <label style="display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--text-2)"><input type="checkbox" id="ing-batch" style="accent-color:var(--accent)">作为批量目录扫描（一次入库目录下所有算例/文件）</label>
     </div>
     <div class="toolbar" style="margin-top:14px"><button class="btn primary sm" id="ing-go">开始入库</button><span id="ing-msg" style="font-size:12.5px;color:var(--text-2);align-self:center"></span></div>
     <div id="ing-result" style="margin-top:12px"></div>
     <p class="note" style="margin-top:8px">示例：单位「西工大」、路径「D:/Git/SimGraph2/test_data/DLR_A_LTS」→ 真入库一个燃烧算例（真解析 QOI + 四切片）。</p>
+  </div>
+</div>
+
+<!-- 服务器文件浏览器（选择入库路径） -->
+<div class="modal-mask" id="fb-mask"></div>
+<div class="modal" id="fb-modal" style="max-width:640px">
+  <div class="modal-hd">📂 选择服务器路径<div class="spacer"></div><button class="icbtn" id="fb-close">✕</button></div>
+  <div class="modal-body">
+    <div class="fb-bar"><button class="btn sm" id="fb-up">⬆ 上级</button><span id="fb-cwd" class="fb-cwd">—</span></div>
+    <div id="fb-list" class="fb-list"></div>
+    <div class="toolbar" style="margin-top:12px">
+      <button class="btn primary sm" id="fb-pick-dir" style="display:none">选此目录（算例）→</button>
+      <span id="fb-hint" style="font-size:11.5px;color:var(--text-3);align-self:center">点文件夹进入 · 点可入库项（🟢）选中；OpenFOAM 目录可整目录选</span>
+    </div>
   </div>
 </div>
 
@@ -1752,6 +1777,55 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
         liveCases(); liveUnits(); livePending();  // 刷新资源库卡片 + 树/统计 + 待对齐
       }catch(e){ msg.textContent='请求失败（后端未启动？）'; msg.style.color='var(--crit)'; }
     });
+  })();
+
+  // 服务器文件浏览器：从资源管理器式界面选入库路径（整机盘符可浏览）
+  (function wireFileBrowser(){
+    var mask=document.getElementById('fb-mask'), modal=document.getElementById('fb-modal');
+    var openBtn=document.getElementById('ing-browse'); if(!modal||!openBtn) return;
+    var listEl=document.getElementById('fb-list'), cwdEl=document.getElementById('fb-cwd');
+    var upBtn=document.getElementById('fb-up'), pickDirBtn=document.getElementById('fb-pick-dir');
+    var cur='';
+    function open(){ modal.classList.add('show'); mask.classList.add('show'); nav(document.getElementById('ing-path').value.trim()||''); }
+    function close(){ modal.classList.remove('show'); mask.classList.remove('show'); }
+    function fmtSize(n){ if(n==null) return ''; if(n>=1e9) return (n/1e9).toFixed(1)+'G'; if(n>=1e6) return (n/1e6).toFixed(1)+'M'; if(n>=1e3) return (n/1e3).toFixed(0)+'K'; return n+'B'; }
+    function choose(path){ document.getElementById('ing-path').value=path; close(); var m=document.getElementById('ing-msg'); if(m){ m.textContent='已选路径'; m.style.color='var(--text-3)'; } }
+    async function nav(path){
+      listEl.innerHTML='<div class="fb-item dim">加载中…</div>';
+      var d=await getJSON(API+'/fs/list?path='+encodeURIComponent(path||''));
+      if(!d){ listEl.innerHTML='<div class="fb-item dim">无法访问（后端未启动？）</div>'; return; }
+      cur=d.path||''; cwdEl.textContent=cur||'（选择盘符）'; cwdEl.title=cur;
+      upBtn.style.visibility=(d.parent===null)?'hidden':'visible';
+      upBtn.onclick=function(){ nav(d.parent||''); };
+      // 当前目录本身可整目录入库（OpenFOAM 算例目录）时给个"选此目录"
+      pickDirBtn.style.display = cur?'':'none';
+      pickDirBtn.textContent='选当前目录 →'; pickDirBtn.onclick=function(){ choose(cur); };
+      var html='';
+      (d.entries||[]).forEach(function(e){
+        var dot=e.ingestable?'<span class="fb-dot" title="可入库 '+(e.kind||'')+'"></span>':'<span style="width:7px"></span>';
+        var ic=e.is_dir?'📁':'📄';
+        var sz=e.size!=null?'<span class="fb-sz">'+fmtSize(e.size)+'</span>':'';
+        var pickBtn=(e.is_dir&&e.ingestable)?'<button class="fb-pick" data-pick="'+encodeURIComponent(e.path)+'">选此算例</button>':'';
+        var dim=(!e.is_dir&&!e.ingestable)?' dim':'';
+        html+='<div class="fb-item'+dim+'" data-dir="'+(e.is_dir?1:0)+'" data-ing="'+(e.ingestable?1:0)+'" data-path="'+encodeURIComponent(e.path)+'"><span>'+ic+'</span>'+dot+'<span class="fb-nm">'+e.name+'</span>'+sz+pickBtn+'</div>';
+      });
+      if(d.truncated) html+='<div class="fb-item dim">（条目过多，仅显示前 1000）</div>';
+      listEl.innerHTML=html||'<div class="fb-item dim">（空目录）</div>';
+      listEl.querySelectorAll('.fb-item[data-path]').forEach(function(row){
+        row.addEventListener('click', function(e){
+          if(e.target.closest('.fb-pick')) return;
+          var p=decodeURIComponent(row.getAttribute('data-path'));
+          if(row.getAttribute('data-dir')==='1'){ nav(p); }
+          else if(row.getAttribute('data-ing')==='1'){ choose(p); }
+        });
+      });
+      listEl.querySelectorAll('.fb-pick').forEach(function(b){
+        b.addEventListener('click', function(){ choose(decodeURIComponent(b.getAttribute('data-pick'))); });
+      });
+    }
+    openBtn.addEventListener('click', open);
+    document.getElementById('fb-close').addEventListener('click', close);
+    mask.addEventListener('click', close);
   })();
 
   // 通用对话：会话制（持久化会话+历史+流式，对齐 DataAgent）。有后端才替换 mock。
