@@ -34,6 +34,7 @@ from app.routers import analysis as analysis_router
 from app.routers import config as config_router
 from app.routers import fs as fs_router
 from app.routers import formulas as formulas_router
+from app.routers import algorithms as algorithms_router
 from app.services import config_store
 from app.db import init_db
 from contextlib import asynccontextmanager
@@ -89,6 +90,7 @@ app.include_router(chat_v2_router.router)
 app.include_router(config_router.router)
 app.include_router(fs_router.router)
 app.include_router(formulas_router.router)
+app.include_router(algorithms_router.router)
 
 
 @app.get("/")

@@ -1154,8 +1154,12 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
           <div id="parse-cfg"><div class="placeholder" style="font-size:12.5px">加载中…</div></div>
         </div>
       </div>
-      <div class="card card-pad" style="margin-top:16px"><h3>计算公式库（skills）<span class="tag" style="margin-left:auto">可扩展</span></h3>
-        <p class="muted" style="margin:3px 0 10px">从原后处理代码提取的**纯计算公式**（数据源无关，OpenFOAM / Fluent / CGNS 复用同一套），供专业分析调用。加新公式只需在 <code>app/services/formulas</code> 追加并登记进 catalog。</p>
+      <div class="card card-pad" style="margin-top:16px"><h3>算法 skills · 表达式编排 <span class="tag" style="margin-left:auto">用户可加</span></h3>
+        <p class="muted" style="margin:3px 0 10px">用<b>安全表达式</b>组合已有变量（算例 QOI/关键量 + 物理常数 <code>gamma</code>/<code>R</code>）自定义算法——例如 <code>thrust/mass_flow</code>、<code>sqrt(gamma*R*T)</code>。可选算例<b>试算</b>，落盘后长期可用。只允许算术+白名单函数（sqrt/log/exp/min/max…），<b>不执行任意代码</b>。</p>
+        <div id="algo-lib"><div class="placeholder" style="font-size:12.5px">加载中…</div></div>
+      </div>
+      <div class="card card-pad" style="margin-top:16px"><h3>计算公式库（内置）<span class="tag" style="margin-left:auto">可扩展</span></h3>
+        <p class="muted" style="margin:3px 0 10px">从原后处理代码提取的**纯计算公式**（数据源无关，OpenFOAM / Fluent / CGNS 复用同一套），供专业分析调用（如"沿程面平均"的马赫/总温/总压）。加新内置公式在 <code>app/services/formulas</code> 追加并登记 catalog。</p>
         <div id="formula-lib"><div class="placeholder" style="font-size:12.5px">加载中…</div></div>
       </div>
     </section>
@@ -2380,6 +2384,61 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
     markLive();
   }
 
-  liveCompare(); liveCases(); liveUnits(); liveReport(); liveNL(); liveLLM(); liveChat(); liveExp(); liveSim(); liveSimMulti(); liveExpMulti(); livePending(); liveConfig(); liveKB(); liveFormulas();
+  // ---- 用户自定义算法 skills（表达式编排）----
+  async function liveAlgorithms(){
+    var mount=document.getElementById('algo-lib'); if(!mount) return;
+    var lj=await getJSON(API+'/algorithms'); if(lj===null) return;
+    var sims=[]; var cj=await getJSON(API+'/cases'); if(cj&&cj.cases) sims=cj.cases;
+    function render(list){
+      var rows=(list||[]).map(function(a){
+        return '<tr data-aid="'+a.id+'"><td class="qty">'+a.name+(a.unit?(' <small style="color:var(--text-3)">'+a.unit+'</small>'):'')+'</td><td><code style="font-size:11.5px">'+a.expr+'</code></td><td class="muted" style="color:var(--text-3);font-size:11px">'+(a.inputs||[]).join(', ')+'</td><td class="num algo-val">—</td><td><button class="mini algo-del" style="color:var(--crit)">删</button></td></tr>';
+      }).join('');
+      mount.innerHTML=
+        '<div class="tblwrap"><table><thead><tr><th>算法</th><th>表达式</th><th>输入</th><th class="num">在所选算例值</th><th style="width:40px"></th></tr></thead><tbody id="algo-rows">'+(rows||'<tr><td colspan="5" class="muted">暂无自定义算法，下面新建一个</td></tr>')+'</tbody></table></div>'+
+        '<div class="toolbar" style="margin:10px 0 4px"><span class="chip">试算算例：<select id="algo-case" class="model-pick" style="font-size:12px">'+sims.map(function(c){return '<option value="'+c.id+'">'+c.name+' · '+c.unit+'</option>';}).join('')+'</select></span><button class="btn sm" id="algo-run">▶ 在此算例上算全部</button><span id="algo-vars" style="font-size:11px;color:var(--text-3);align-self:center"></span></div>'+
+        '<div class="sect-label" style="margin:12px 0 6px">新建算法</div>'+
+        '<div style="display:grid;grid-template-columns:1.1fr 1.6fr 0.6fr auto;gap:8px;align-items:start">'+
+          '<input id="na-name" placeholder="名称，如 比冲" style="'+inp+'">'+
+          '<input id="na-expr" placeholder="表达式，如 thrust*1000/(mass_flow*9.81)" style="'+inp+'">'+
+          '<input id="na-unit" placeholder="单位" style="'+inp+'">'+
+          '<button class="btn primary sm" id="na-add">保存</button>'+
+        '</div><div id="na-msg" style="font-size:11.5px;margin-top:6px;color:var(--text-3)"></div>';
+      bindRows();
+    }
+    var inp='font-size:12px;background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:6px 9px;color:var(--text)';
+    function bindRows(){
+      var msg=function(){return document.getElementById('na-msg');};
+      // 删除
+      mount.querySelectorAll('.algo-del').forEach(function(b){ b.addEventListener('click', async function(){ var id=b.closest('tr').getAttribute('data-aid'); await fetch(API+'/algorithms/'+id,{method:'DELETE'}); reload(); }); });
+      // 表达式实时校验（显示变量）
+      var ex=document.getElementById('na-expr'); if(ex) ex.addEventListener('input', async function(){ var v=ex.value.trim(); if(!v){ msg().textContent=''; return; } var d=await getJSON(API+'/algorithms/validate',{}); });
+      // 新建
+      var add=document.getElementById('na-add'); if(add) add.addEventListener('click', async function(){
+        var name=document.getElementById('na-name').value.trim(), expr=document.getElementById('na-expr').value.trim(), unit=document.getElementById('na-unit').value.trim();
+        if(!name||!expr){ msg().textContent='请填名称与表达式'; msg().style.color='var(--crit)'; return; }
+        var r=await fetch(API+'/algorithms',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,expr:expr,unit:unit})});
+        var d=await r.json();
+        if(r.ok){ msg().textContent='✓ 已保存（输入变量：'+(d.inputs||[]).join(', ')+'）'; msg().style.color='var(--good)'; document.getElementById('na-name').value=''; document.getElementById('na-expr').value=''; document.getElementById('na-unit').value=''; reload(); }
+        else { msg().textContent='✗ '+((d&&d.detail)||'表达式非法'); msg().style.color='var(--crit)'; }
+      });
+      // 试算全部
+      var run=document.getElementById('algo-run'); if(run) run.addEventListener('click', runAll);
+      var cs=document.getElementById('algo-case'); if(cs) cs.addEventListener('change', function(){ showVars(); mount.querySelectorAll('.algo-val').forEach(function(td){td.textContent='—';}); });
+      showVars();
+    }
+    async function showVars(){ var cs=document.getElementById('algo-case'); var el=document.getElementById('algo-vars'); if(!cs||!el||!cs.value) return; var d=await getJSON(API+'/algorithms/case-context/'+cs.value); if(d&&d.vars) el.textContent='可用变量：'+d.vars.slice(0,12).map(function(v){return v.name;}).join(', ')+(d.vars.length>12?'…':''); }
+    async function runAll(){ var cs=document.getElementById('algo-case'); if(!cs||!cs.value) return;
+      var rows=mount.querySelectorAll('#algo-rows tr[data-aid]');
+      for(var i=0;i<rows.length;i++){ var tr=rows[i]; var expr=tr.querySelector('code').textContent; var td=tr.querySelector('.algo-val');
+        var r=await (await fetch(API+'/algorithms/eval',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({expr:expr,case_id:+cs.value})})).json();
+        td.textContent=r.ok?(Math.round(r.value*10000)/10000):'—'; td.style.color=r.ok?'var(--accent)':'var(--text-3)'; td.title=r.ok?'':(r.reason||'');
+      }
+    }
+    async function reload(){ var l=await getJSON(API+'/algorithms'); render((l&&l.algorithms)||[]); }
+    render(lj.algorithms||[]);
+    markLive();
+  }
+
+  liveCompare(); liveCases(); liveUnits(); liveReport(); liveNL(); liveLLM(); liveChat(); liveExp(); liveSim(); liveSimMulti(); liveExpMulti(); livePending(); liveConfig(); liveKB(); liveFormulas(); liveAlgorithms();
 })();
 </script>

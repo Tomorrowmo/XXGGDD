@@ -24,3 +24,4 @@ eval_platform.db
 var/
 ingest/
 parse_config.json
+algorithms.json
