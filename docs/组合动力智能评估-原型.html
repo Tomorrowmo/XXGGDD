@@ -119,6 +119,8 @@
   .btn.primary{background:var(--accent);color:var(--accent-ink);border-color:transparent;font-weight:650}
   .btn.primary:hover{filter:brightness(1.08)}
   .btn.primary:disabled{opacity:.4;cursor:not-allowed;filter:none}
+  .btn.dim{opacity:.5}  /* 未满足条件但仍可点击（点击给提示，避免"点了没反应"） */
+  .btn.dim:hover{opacity:.75}
   .btn.sm{padding:6px 11px;font-size:12.5px}
   .chip{font-family:var(--ui);font-size:12.5px;color:var(--text-2);cursor:pointer;background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:6px 11px;display:inline-flex;gap:6px;align-items:center}
   .chip:hover{border-color:var(--border-strong);color:var(--text)}
@@ -623,7 +625,7 @@
         <button class="btn primary sm" id="ingest-open">＋ 批量入库</button>
         <span class="chip">单位 ▾</span><span class="chip">类型 ▾</span><span class="chip">工况 ▾</span><span class="chip">置信度 ▾</span>
         <div class="spacer"></div>
-        <button class="btn primary sm" id="go-compare" disabled>已选 <span id="seln">0</span> 项 → 去对比</button>
+        <button class="btn primary sm dim" id="go-compare">已选 <span id="seln">0</span> 项 → 去对比</button>
       </div>
       <div id="pending-panel" style="display:none;margin-bottom:14px"></div>
       <div class="grid cols-lib">
@@ -1346,9 +1348,13 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
   });
 
   // library selection
-  function refreshSel(){ let n=0; $$('.dcard').forEach(c=>{ const chk=c.querySelector('.chk'); const on=chk.checked&&!chk.disabled; c.classList.toggle('sel',on); if(on)n++; }); $('#seln').textContent=n; $('#go-compare').disabled=n<2; }
+  function refreshSel(){ let n=0; $$('.dcard').forEach(c=>{ const chk=c.querySelector('.chk'); const on=chk.checked&&!chk.disabled; c.classList.toggle('sel',on); if(on)n++; }); $('#seln').textContent=n;
+    // 不再置 disabled（disabled 按钮点击无任何反馈，易被误判为"点了没反应"）；改为点击时校验并给提示
+    var gc=$('#go-compare'); if(gc) gc.classList.toggle('dim', n<2); }
   $$('.dcard .chk').forEach(chk=>chk.addEventListener('change', refreshSel));
-  $('#go-compare').addEventListener('click', ()=>{ if(!$('#go-compare').disabled){ toast('已带 '+$('#seln').textContent+' 个对象进入对比'); go('compare'); }});
+  $('#go-compare').addEventListener('click', ()=>{ var n=+($('#seln').textContent||0);
+    if(n<2){ toast('请先在下方勾选至少 2 个「同工况」对象，再点去对比'); return; }
+    toast('已带 '+n+' 个对象进入对比'); go('compare'); });
 
   // data preview drawer
   const drawer=$('#drawer'), drawerMask=$('#drawer-mask');
@@ -2065,18 +2071,26 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
       var mapper=vtk.Rendering.Core.vtkMapper.newInstance({scalarVisibility:false}); mapper.setInputData(poly);
       var actor=vtk.Rendering.Core.vtkActor.newInstance(); actor.setMapper(mapper); actor.getProperty().setColor(0.62,0.74,0.94); renderer.addActor(actor);
       var lut=vtk.Rendering.Core.vtkColorTransferFunction.newInstance();
-      function preset(){ var cm=vtk.Rendering.Core.vtkColorMaps; if(cm){ var p=cm.getPresetByName('Cool to Warm'); if(p) lut.applyColorMap(p); } }
-      preset(); mapper.setLookupTable(lut);
+      // 手动蓝→青→绿→黄→红 冷暖色标：不依赖 vtkColorMaps 预设（此打包里它挂在
+      // vtkColorTransferFunction.vtkColorMaps 而非 Rendering.Core.vtkColorMaps，直接引用会 undefined→空 LUT→整面渲成黑）。
+      function buildLut(lo,hi){ lut.removeAllPoints(); if(!(hi>lo)) hi=lo+1e-6;
+        var st=[[0,0.23,0.30,0.75],[0.25,0.18,0.55,0.90],[0.5,0.28,0.68,0.30],[0.75,0.96,0.80,0.16],[1,0.86,0.20,0.13]];
+        st.forEach(function(s){ lut.addRGBPoint(lo+(hi-lo)*s[0], s[1],s[2],s[3]); });
+        if(lut.setMappingRange) lut.setMappingRange(lo,hi); if(lut.updateRange) lut.updateRange(); }
+      buildLut(0,1); mapper.setLookupTable(lut);
       var pd=poly.getPointData(), names=[];
       for(var i=0;i<pd.getNumberOfArrays();i++){ var a=pd.getArrayByIndex(i); if(a&&a.getNumberOfComponents()===1) names.push(a.getName()); }
-      var pri=['T','p','U','Umag','Mach','rho','Qdot','k','epsilon','nut','alphat'];
+      // 标量优先级：兼顾 Fluent 规范名（Temperature/Pressure/…）与 OpenFOAM/CGNS 名（T/p/U/Mach…）
+      var pri=['Temperature','T','Mach','Pressure','p','Density','rho','VelocityMagnitude','Umag','U',
+               'VelocityX','VelocityY','VelocityZ','TKE','k','Qdot','TotalReactionRate'];
       names.sort(function(a,b){ var ia=pri.indexOf(a),ib=pri.indexOf(b); ia=ia<0?99:ia; ib=ib<0?99:ib; return ia-ib||a.localeCompare(b); });
       function applyScalar(name){ if(name==='__none__'){ mapper.setScalarVisibility(false); actor.getProperty().setColor(0.62,0.74,0.94); renderWindow.render(); return; }
         var arr=pd.getArrayByName(name); if(!arr) return; var rng=arr.getRange(); pd.setActiveScalars(name);
-        lut.removeAllPoints(); preset(); lut.setMappingRange(rng[0],rng[1]); if(lut.updateRange) lut.updateRange();
+        buildLut(rng[0],rng[1]);
         mapper.setLookupTable(lut); if(mapper.setScalarModeToUsePointData) mapper.setScalarModeToUsePointData(); mapper.setScalarVisibility(true); renderWindow.render(); }
       var ssel=document.getElementById('v3d-scalar'); if(ssel){ ssel.innerHTML='<option value="__none__">仅几何</option>'+names.map(function(n){return '<option value="'+n+'">'+n+'</option>';}).join('');
-        var first=names.filter(function(n){return pri.indexOf(n)>=0;})[0]; if(first){ ssel.value=first; applyScalar(first); } ssel.onchange=function(){ applyScalar(ssel.value); }; }
+        // 默认选优先级最高的可用物理量（不再局限于 OpenFOAM 名，Fluent 也能自动上色）
+        var first=names.filter(function(n){return pri.indexOf(n)>=0;})[0]||names[0]; if(first){ ssel.value=first; applyScalar(first); } ssel.onchange=function(){ applyScalar(ssel.value); }; }
       var rsel=document.getElementById('v3d-repr'); if(rsel) rsel.onchange=function(){ var p=actor.getProperty(),v=rsel.value; if(v==='points'){p.setRepresentation(0);p.setPointSize(3);} else if(v==='wire'){p.setRepresentation(1);} else {p.setRepresentation(2);p.setEdgeVisibility(v==='edges');p.setEdgeColor(0.1,0.1,0.14);} renderWindow.render(); };
       var op=document.getElementById('v3d-op'); if(op) op.oninput=function(){ actor.getProperty().setOpacity(+op.value); renderWindow.render(); };
       renderer.resetCamera(); renderWindow.render();

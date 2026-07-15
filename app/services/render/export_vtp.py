@@ -64,10 +64,11 @@ def export_vtp(multiblock, out_dir: str, include_internal: bool = False) -> dict
     if n_points == 0:
         return {"ok": False, "reason": "表面提取为空"}
 
-    # 单元数据 → 点数据（vtk.js 按点标量上色更平滑）
+    # 单元数据 → 点数据（vtk.js 按点标量上色更平滑）。
+    # 不 PassCellData：前端只用点数据，保留一份单元数据副本会让 surface.vtp 体积翻倍
+    # （Fluent 大算例可达上百 MB，拖慢前端下载/解析）。
     c2p = vtk.vtkCellDataToPointData()
     c2p.SetInputData(poly)
-    c2p.PassCellDataOn()
     c2p.Update()
     poly = c2p.GetOutput()
 
