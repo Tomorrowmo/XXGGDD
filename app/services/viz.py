@@ -59,10 +59,20 @@ def _is_openfoam(case_path: str | Path) -> bool:
     return False
 
 
+def _is_fluent(case_path: str | Path) -> bool:
+    """Fluent 算例文件（CFF/HDF5 .cas.h5 或传统 .cas/.cas.gz）——标准 VTK 可读，基础环境即可。"""
+    return str(case_path).lower().endswith((".cas.h5", ".cas.gz", ".cas"))
+
+
+def _self_contained(case_path: str | Path) -> bool:
+    """该格式能否用平台基础环境（自带 VTK）渲染，不需 Romtek/PostProcessTool。"""
+    return _is_openfoam(case_path) or _is_fluent(case_path)
+
+
 def _render_python(case_path: str | Path) -> str:
-    """选渲染用的 python：OpenFOAM 用基础环境（含 VTK，自洽）；
+    """选渲染用的 python：OpenFOAM/Fluent 用基础环境（含 VTK，自洽）；
     需 Romtek 的格式优先 PostProcessTool，缺则退回基础环境（届时诚实报错）。"""
-    if _is_openfoam(case_path):
+    if _self_contained(case_path):
         return sys.executable
     ppt = settings.assets.postprocess_python
     return str(ppt) if ppt and Path(ppt).exists() else sys.executable
@@ -78,10 +88,10 @@ def preview_dir(case_path: str | Path) -> Path:
 
 
 def _env_ready(case_path: str | Path | None = None) -> bool:
-    """渲染是否可用。OpenFOAM：基础环境有 VTK 即可（几乎总为真）；
+    """渲染是否可用。OpenFOAM/Fluent：基础环境有 VTK 即可（几乎总为真）；
     其它需 Romtek 的格式：要 PostProcessTool + SimGraph2 才行。"""
-    if case_path is not None and _is_openfoam(case_path):
-        return True  # 用 sys.executable（基础环境已含 VTK）
+    if case_path is not None and _self_contained(case_path):
+        return True  # 用 sys.executable（基础环境已含 VTK，含 vtkFLUENTCFFReader）
     py = settings.assets.postprocess_python
     return Path(py).exists() and settings.assets.simgraph2_root.exists()
 

@@ -11,6 +11,9 @@ import pytest
 from app.services import viz
 
 _CASE_DIR = Path(r"D:/Git/SimGraph2/test_data/DLR_A_LTS")
+_FLUENT_CAS = Path(
+    r"D:/Git/XGDRSight/HYY_PerfomanceAnalysis/Case/case1/"
+    r"Ma6.0-con1-0.6+0.4-hot-2nd-final.cas.h5")
 
 
 def test_openfoam_detection():
@@ -28,8 +31,31 @@ def test_openfoam_available_without_external_env(monkeypatch):
     monkeypatch.setattr(viz.settings.assets, "postprocess_python", Path("/nonexistent/py.exe"))
     monkeypatch.setattr(viz.settings.assets, "simgraph2_root", Path("/nonexistent/simgraph2"))
     assert viz.available("x/case.foam") is True
-    # 非 OpenFOAM（需 Romtek）在缺环境时不可用
-    assert viz.available("x/case.cas.h5") is False
+    # Fluent（.cas.h5/.cas）用标准 VTK 读，基础环境即可，缺 Romtek 也可用
+    assert viz.available("x/case.cas.h5") is True
+    assert viz.available("x/case.cas") is True
+    # 仍需 Romtek 的格式（如 CGNS）在缺环境时不可用
+    assert viz.available("x/case.cgns") is False
+
+
+def test_fluent_detection_and_python(monkeypatch):
+    # Fluent 识别（CFF/HDF5 与传统 .cas），且不误判成 OpenFOAM
+    assert viz._is_fluent("some/case.cas.h5") is True
+    assert viz._is_fluent("some/case.cas") is True
+    assert viz._is_fluent("some/case.cas.gz") is True
+    assert viz._is_fluent("some/case.foam") is False
+    assert viz._is_openfoam("some/case.cas.h5") is False
+    # Fluent 用基础解释器（含 vtkFLUENTCFFReader），不走 PostProcessTool
+    assert viz._render_python("x/case.cas.h5") == sys.executable
+
+
+def test_fluent_loader_importable():
+    pytest.importorskip("vtk")
+    from app.services.render import fluent_loader
+    assert hasattr(fluent_loader, "load_fluent")
+    # SV_* → 规范名映射齐备
+    assert fluent_loader._SV_CANONICAL["SV_T"] == "Temperature"
+    assert fluent_loader._SV_CANONICAL["SV_U"] == "VelocityX"
 
 
 def test_vendored_modules_importable():
@@ -89,6 +115,36 @@ def test_render_turntable_frames(tmp_path):
     frames = sorted(tmp_path.glob("turn_*.png"))
     assert len(frames) == 8
     assert all(f.stat().st_size > 500 for f in frames)
+
+
+@pytest.mark.skipif(not _FLUENT_CAS.exists(), reason="Fluent 测试算例不可用")
+def test_fluent_loader_reads_and_normalizes():
+    # 端到端读真实 Fluent CFF/HDF5：标准 VTK 读到网格 + 规范化场名 + 丢弃无用 SV_ 场
+    pytest.importorskip("vtk")
+    from app.services.render import fluent_loader
+    mb = fluent_loader.load_fluent(str(_FLUENT_CAS))
+    assert mb.GetNumberOfBlocks() >= 1
+    blk = mb.GetBlock(0)
+    assert blk.GetNumberOfCells() > 0 and blk.GetNumberOfPoints() > 0
+    cd = blk.GetCellData()
+    names = {cd.GetArrayName(i) for i in range(cd.GetNumberOfArrays())}
+    # SV_T/SV_P/SV_U 已规范化
+    assert {"Temperature", "Pressure", "VelocityX"} <= names
+    # 离散相等无用 SV_ 场已丢弃（不污染导出/渲染）
+    assert not any((n or "").upper().startswith("SV_") for n in names)
+
+
+@pytest.mark.skipif(not _FLUENT_CAS.exists(), reason="Fluent 测试算例不可用")
+@pytest.mark.skipif(__import__("os").environ.get("RENDER_E2E") != "1",
+                    reason="慢测（真渲染 ~50s），设 RENDER_E2E=1 开启")
+def test_fluent_end_to_end_render(tmp_path, monkeypatch):
+    # 真出图：Fluent .cas.h5 → 切片 + 缩略图，引擎标记 vendored-vtk-fluent，不依赖 Romtek
+    monkeypatch.setattr(viz.settings, "previews_dir", tmp_path)
+    monkeypatch.setattr(viz.settings.assets, "simgraph2_root", Path("/nonexistent/simgraph2"))
+    res = viz.generate_previews(str(_FLUENT_CAS))
+    assert res["available"], res.get("reason")
+    assert res.get("engine") == "vendored-vtk-fluent"
+    assert {"slice_X", "slice_Y", "slice_Z", "surf_a", "surf_b"} <= set(res["images"].keys())
 
 
 @pytest.mark.skipif(not _CASE_DIR.exists(), reason="DLR 测试算例不可用")

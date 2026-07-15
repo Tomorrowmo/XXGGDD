@@ -88,26 +88,50 @@ def _is_openfoam(case_path: str) -> bool:
     return False
 
 
+def _is_fluent(case_path: str) -> bool:
+    """Fluent 算例文件（CFF/HDF5 .cas.h5 或传统 .cas/.cas.gz）——标准 VTK 可读，无需 Romtek。"""
+    return case_path.lower().endswith((".cas.h5", ".cas.gz", ".cas"))
+
+
+def _render_from_mb(mb, out_dir: str, scalar: str, engine: str) -> dict:
+    """已加载的 multiblock → 多视角切片 + 缩略图（平台自有 vendored 渲染）。"""
+    VSR = _vendored_render()
+    for sc in _scalar_candidates(mb, scalar):
+        try:
+            VSR.render_case(mb, sc, out_dir)
+            _make_thumb(VSR, mb, out_dir)
+            imgs = sorted(os.path.basename(p) for p in glob.glob(os.path.join(out_dir, "*.png")))
+            if imgs:
+                return {"ok": True, "scalar": sc, "images": imgs, "engine": engine}
+        except Exception:
+            continue
+    return {"ok": False, "error": "渲染未产出图像", "engine": engine}
+
+
 def _render_openfoam(case_path: str, out_dir: str, scalar: str) -> dict:
     """平台自有渲染：vendored openfoam_loader + simagent_render（无 SimGraph2/Romtek）。"""
     # 让本脚本能 import 平台的 render 包（app/services/render）
     here = os.path.dirname(os.path.abspath(__file__))          # app/services
     sys.path.insert(0, here)
-    from render import openfoam_loader, simagent_render as SR   # type: ignore
+    from render import openfoam_loader   # type: ignore
 
     if case_path.lower().endswith(".foam"):
         case_path = os.path.dirname(case_path)
     mb = openfoam_loader.load_openfoam(case_path)
-    for sc in _scalar_candidates(mb, scalar):
-        try:
-            SR.render_case(mb, sc, out_dir)
-            _make_thumb(SR, mb, out_dir)
-            imgs = sorted(os.path.basename(p) for p in glob.glob(os.path.join(out_dir, "*.png")))
-            if imgs:
-                return {"ok": True, "scalar": sc, "images": imgs, "engine": "vendored-vtk"}
-        except Exception:
-            continue
-    return {"ok": False, "error": "渲染未产出图像", "engine": "vendored-vtk"}
+    return _render_from_mb(mb, out_dir, scalar, "vendored-vtk")
+
+
+def _render_fluent(case_path: str, out_dir: str, scalar: str) -> dict:
+    """Fluent 渲染：标准 VTK 的 vtkFLUENTCFFReader/vtkFLUENTReader（无 Romtek），平台基础环境即可。"""
+    here = os.path.dirname(os.path.abspath(__file__))          # app/services
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    from render import fluent_loader   # type: ignore
+    try:
+        mb = fluent_loader.load_fluent(case_path)
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"Fluent 读取失败：{e}", "engine": "vendored-vtk-fluent"}
+    return _render_from_mb(mb, out_dir, scalar, "vendored-vtk-fluent")
 
 
 def _make_thumb(vendored_sr, mb, out_dir) -> None:
@@ -172,6 +196,12 @@ def _load_mb(case_path: str):
         from render import openfoam_loader  # type: ignore
         cp = os.path.dirname(case_path) if case_path.lower().endswith(".foam") else case_path
         return openfoam_loader.load_openfoam(cp), "vendored-vtk"
+    if _is_fluent(case_path):
+        here = os.path.dirname(os.path.abspath(__file__))
+        if here not in sys.path:
+            sys.path.insert(0, here)
+        from render import fluent_loader  # type: ignore
+        return fluent_loader.load_fluent(case_path), "vendored-vtk-fluent"
     sg2 = os.environ.get("SIMGRAPH2_ROOT", r"D:/Git/SimGraph2")
     if not os.path.isdir(sg2):
         raise RuntimeError(f"该格式需 Romtek，但 SIMGRAPH2_ROOT 不可用：{sg2}")
@@ -243,6 +273,8 @@ def main() -> None:
             _emit(_render_turntable(case_path, out_dir, n))
         elif _is_openfoam(case_path):
             _emit(_render_openfoam(case_path, out_dir, arg3))
+        elif _is_fluent(case_path):
+            _emit(_render_fluent(case_path, out_dir, arg3))
         else:
             _emit(_render_via_simgraph2(case_path, out_dir, arg3))
     except Exception as e:  # noqa: BLE001
