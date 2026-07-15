@@ -151,40 +151,16 @@ def _vendored_render():
 
 
 def _render_via_simgraph2(case_path: str, out_dir: str, scalar: str) -> dict:
-    """回退：需 Romtek 的格式走 SimGraph2/PostEngine（需 SIMGRAPH2_ROOT + Romtek 环境）。"""
-    sg2 = os.environ.get("SIMGRAPH2_ROOT", r"D:/Git/SimGraph2")
-    if not os.path.isdir(sg2):
-        return {"ok": False, "error": f"该格式需 Romtek 渲染，但 SIMGRAPH2_ROOT 不可用：{sg2}"}
-    sys.path.insert(0, sg2)
+    """需 Romtek 的格式（CGNS/Fluent 传统 .cas 等）：用 Romtek **载入**，再用平台自有
+    vendored 渲染（几何式选体：外流出飞行器本体，非远场盒；场值稳健配色）。
+
+    只用 Romtek 读器（面块带单元、场正确），渲染统一走 vendored（可控、已修选体/配色）。
+    """
     try:
-        os.chdir(sg2)
-    except Exception:
-        pass
-    try:
-        from post_engine.engine import PostEngine
-        import simagent_render as SR
+        mb, engine = _load_mb(case_path)   # Romtek 载入（else 分支）
     except Exception as e:  # noqa: BLE001
-        return {"ok": False, "error": f"import SimGraph2/Romtek 失败：{e}"}
-    try:
-        eng = PostEngine()
-        sid = "render"
-        r = eng.load_file(sid, case_path)
-        if isinstance(r, dict) and r.get("error"):
-            return {"ok": False, "error": r["error"]}
-        mb = eng.session_mgr.get(sid).post_data.get_vtk_data()
-        vsr = _vendored_render()  # 缩略图用平台自有渲染（与加载引擎无关）
-        for sc in _scalar_candidates(mb, scalar):
-            try:
-                SR.render_case(mb, sc, out_dir)
-                _make_thumb(vsr, mb, out_dir)
-                imgs = sorted(os.path.basename(p) for p in glob.glob(os.path.join(out_dir, "*.png")))
-                if imgs:
-                    return {"ok": True, "scalar": sc, "images": imgs, "engine": "simgraph2-romtek"}
-            except Exception:
-                continue
-        return {"ok": False, "error": "渲染未产出图像"}
-    except Exception as e:  # noqa: BLE001
-        return {"ok": False, "error": f"渲染异常：{e}"}
+        return {"ok": False, "error": str(e)[:200], "engine": "simgraph2-romtek"}
+    return _render_from_mb(mb, out_dir, scalar, engine)
 
 
 def _load_mb(case_path: str):

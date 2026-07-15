@@ -77,6 +77,66 @@ def _two_block_mb():
     return mb
 
 
+def _ext_aero_mb():
+    """构造外流多块：远场大盒(体) + 对称面(大平面) + 紧凑弹体(球) —— 模拟按单元类型命名的外流 CGNS。"""
+    vtk = pytest.importorskip("vtk")
+    # 体网格远场盒（3D 单元 → 会被判为域块）
+    box = vtk.vtkCubeSource(); box.SetXLength(30); box.SetYLength(30); box.SetZLength(30); box.Update()
+    tet = vtk.vtkDataSetTriangleFilter(); tet.SetInputData(box.GetOutput()); tet.Update()
+    # 对称面（大平面，跨域）
+    plane = vtk.vtkPlaneSource(); plane.SetOrigin(-15, -15, 0); plane.SetPoint1(15, -15, 0); plane.SetPoint2(-15, 15, 0)
+    plane.SetXResolution(20); plane.SetYResolution(20); plane.Update()
+    # 紧凑弹体（球，直径 ~2，域 30 → 6.7%）
+    sph = vtk.vtkSphereSource(); sph.SetRadius(1.0); sph.SetThetaResolution(30); sph.SetPhiResolution(30); sph.Update()
+    mb = vtk.vtkMultiBlockDataSet()
+    for i, (blk, nm) in enumerate([(tet.GetOutput(), "Elem_Tetras"),
+                                    (plane.GetOutput(), "Elem_Triangles"),
+                                    (sph.GetOutput(), "Elem_Triangles")]):
+        mb.SetBlock(i, blk); mb.GetMetaData(i).Set(vtk.vtkCompositeDataSet.NAME(), nm)
+    return mb
+
+
+def test_isolate_body_external_picks_compact():
+    # 外流：应隔离出紧凑弹体（球，包围盒 ~2），排除远场盒(30)与对称面
+    pytest.importorskip("vtk")
+    from app.services.render import simagent_render as SR
+    surf = SR._isolate_body(SR._named_blocks(_ext_aero_mb()))
+    assert surf is not None and surf.GetNumberOfPoints() > 0
+    bb = surf.GetBounds()
+    assert (bb[1] - bb[0]) < 5     # 弹体 ~2，远小于域 30 → 证明没混入远场
+
+
+def test_isolate_body_internal_returns_none():
+    # 内流/单域：无"紧凑本体+远场"结构 → 返回 None，交调用方回退整域
+    pytest.importorskip("vtk")
+    from app.services.render import simagent_render as SR
+    # 只有一个大体网格块（内流：整域即关心区）
+    vtk = __import__("vtk")
+    box = vtk.vtkCubeSource(); box.SetXLength(10); box.Update()
+    tet = vtk.vtkDataSetTriangleFilter(); tet.SetInputData(box.GetOutput()); tet.Update()
+    mb = vtk.vtkMultiBlockDataSet(); mb.SetBlock(0, tet.GetOutput())
+    mb.GetMetaData(0).Set(vtk.vtkCompositeDataSet.NAME(), "fluid")
+    assert SR._isolate_body(SR._named_blocks(mb)) is None
+
+
+def test_robust_range_ignores_outliers():
+    # 稳健范围应排除极端离群值（否则云图被冲成一片单色）
+    pytest.importorskip("vtk")
+    from app.services.render import simagent_render as SR
+    vtk = __import__("vtk")
+    plane = vtk.vtkPlaneSource(); plane.SetXResolution(40); plane.SetYResolution(40); plane.Update()
+    p = plane.GetOutput()
+    n = p.GetNumberOfPoints()
+    arr = vtk.vtkFloatArray(); arr.SetName("f"); arr.SetNumberOfTuples(n)
+    for i in range(n):
+        arr.SetValue(i, i / n)               # 绝大多数在 [0,1)
+    for i in range(1, 6):
+        arr.SetValue(n - i, 1e9)             # 末尾 5 个极端离群
+    p.GetPointData().AddArray(arr)
+    rr = SR._robust_range(p, "f")
+    assert rr is not None and rr[1] < 1e6      # 离群 1e9 被百分位裁掉（2–98 分位）
+
+
 def test_pick_body_prefers_named_not_farfield():
     pytest.importorskip("vtk")
     from app.services.render import simagent_render as SR

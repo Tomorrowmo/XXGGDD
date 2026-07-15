@@ -10,9 +10,9 @@ import os
 import vtk
 
 try:  # 子进程按 `render.export_vtp` 载入用相对；app 内按包载入亦可
-    from .simagent_render import _named_blocks, _pick_body_surface
+    from .simagent_render import _named_blocks, _pick_body_surface, _isolate_body, _robust_range
 except ImportError:  # pragma: no cover
-    from simagent_render import _named_blocks, _pick_body_surface  # type: ignore
+    from simagent_render import _named_blocks, _pick_body_surface, _isolate_body, _robust_range  # type: ignore
 
 
 # 体网格 / 远场 边界：3D 交互只关心物面（弹体/壁面），排除这些否则相机框住大盒子→一片黑
@@ -40,18 +40,25 @@ def export_vtp(multiblock, out_dir: str, include_internal: bool = False) -> dict
             out.append((nm, b))
         return out
 
-    # 合并所有边界块（排除体网格/远场，避免相机框住大盒子），提表面。
-    # 内流(燃烧室)要保留全部壁面→合并；外流(弹体)排除远场后即物面。
     named = _named()
-    kept = [b for nm, b in named if not (_excluded(nm) and not include_internal)]
     poly = None
-    if kept:
-        append = vtk.vtkAppendFilter()
-        for b in kept:
-            append.AddInputData(b)
-        append.Update()
-        geo = vtk.vtkGeometryFilter(); geo.SetInputData(append.GetOutput()); geo.Update()
-        poly = geo.GetOutput()
+    # 外流：几何式隔离飞行器/弹体本体面（排远场/对称面/体网格，避免相机框住大盒子→黑）。
+    # 外流 CGNS 常按单元类型 Elem_* 命名，名字排除法失效，故优先用几何判据。
+    if not include_internal:
+        try:
+            poly = _isolate_body(named)
+        except Exception:  # noqa: BLE001
+            poly = None
+    # 内流(燃烧室/流道)或未隔离到本体：按名排除远场后合并全部壁面。
+    if poly is None or poly.GetNumberOfPoints() == 0:
+        kept = [b for nm, b in named if not (_excluded(nm) and not include_internal)]
+        if kept:
+            append = vtk.vtkAppendFilter()
+            for b in kept:
+                append.AddInputData(b)
+            append.Update()
+            geo = vtk.vtkGeometryFilter(); geo.SetInputData(append.GetOutput()); geo.Update()
+            poly = geo.GetOutput()
     if poly is None or poly.GetNumberOfPoints() == 0:   # 全被排除/空 → 退回物面选取
         try:
             poly = _pick_body_surface(_named_blocks(multiblock))
@@ -80,8 +87,14 @@ def export_vtp(multiblock, out_dir: str, include_internal: bool = False) -> dict
             continue
         comps = arr.GetNumberOfComponents()
         rng = arr.GetRange(-1) if comps > 1 else arr.GetRange()
-        scalars.append({"name": arr.GetName(), "components": comps,
-                        "min": float(rng[0]), "max": float(rng[1])})
+        entry = {"name": arr.GetName(), "components": comps,
+                 "min": float(rng[0]), "max": float(rng[1])}
+        # 稳健百分位范围（前端上色用它，避免离群值把面配成一片单色）
+        if comps == 1:
+            rr = _robust_range(poly, arr.GetName())
+            if rr:
+                entry["rmin"], entry["rmax"] = float(rr[0]), float(rr[1])
+        scalars.append(entry)
 
     writer = vtk.vtkXMLPolyDataWriter()
     writer.SetFileName(os.path.join(out_dir, "surface.vtp"))

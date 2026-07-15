@@ -2060,6 +2060,8 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
       box.innerHTML='<div class="placeholder" style="border:0;background:transparent">生成边界面 VTP…</div>';
       var d=await getJSON(API+'/cases/'+cid+'/vtp');
       if(!d||!d.available){ box.innerHTML='<div class="placeholder" style="border:0;background:transparent">'+((d&&d.reason)||'无法生成三维')+'</div>'; return; }
+      // 稳健色标范围（后端百分位算好，避免离群/远场均匀值把物面配成一片红/蓝）
+      var robust={}; try{ var mj=await getJSON(d.meta_url); (mj&&mj.scalars||[]).forEach(function(s){ if(s.rmin!=null&&s.rmax!=null) robust[s.name]=[s.rmin,s.rmax]; }); }catch(e){}
       var vtk;
       try{ vtk=await ensureVtk(); }catch(e){ if(st) st.textContent='vtk.js 离线 · 降级转台'; return fallbackTurntable(cid, box); }
       box.innerHTML=''; box.style.position='relative';
@@ -2085,7 +2087,7 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
                'VelocityX','VelocityY','VelocityZ','TKE','k','Qdot','TotalReactionRate'];
       names.sort(function(a,b){ var ia=pri.indexOf(a),ib=pri.indexOf(b); ia=ia<0?99:ia; ib=ib<0?99:ib; return ia-ib||a.localeCompare(b); });
       function applyScalar(name){ if(name==='__none__'){ mapper.setScalarVisibility(false); actor.getProperty().setColor(0.62,0.74,0.94); renderWindow.render(); return; }
-        var arr=pd.getArrayByName(name); if(!arr) return; var rng=arr.getRange(); pd.setActiveScalars(name);
+        var arr=pd.getArrayByName(name); if(!arr) return; var rng=robust[name]||arr.getRange(); pd.setActiveScalars(name);
         buildLut(rng[0],rng[1]);
         mapper.setLookupTable(lut); if(mapper.setScalarModeToUsePointData) mapper.setScalarModeToUsePointData(); mapper.setScalarVisibility(true); renderWindow.render(); }
       var ssel=document.getElementById('v3d-scalar'); if(ssel){ ssel.innerHTML='<option value="__none__">仅几何</option>'+names.map(function(n){return '<option value="'+n+'">'+n+'</option>';}).join('');

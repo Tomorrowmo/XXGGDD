@@ -170,20 +170,24 @@ def render_case(multiblock, scalar, out_dir, w=760, h=520):
     if not blocks:
         return []
     os.makedirs(out_dir, exist_ok=True)
-    body_name, body = min(blocks, key=lambda nb: nb[1].GetNumberOfPoints())   # 弹体表面=最小区块
-    vol_name, volume = max(blocks, key=lambda nb: nb[1].GetNumberOfPoints())  # 体网格=最大区块（Mach 在其 cell 数据上）
-    bb = body.GetBounds()
+    vol_name, volume = max(blocks, key=lambda nb: nb[1].GetNumberOfPoints())  # 体网格=最大区块（场在其 cell 数据上）
+    # 物面：外流用几何式隔离飞行器/弹体本体（排远场/对称面/体网格）；内流回退最小块表面
+    surf = _isolate_body(blocks)
+    if surf is None:
+        _bn, body = min(blocks, key=lambda nb: nb[1].GetNumberOfPoints())
+        surf = _surface(body)
+    bb = surf.GetBounds()
     bc = [(bb[0] + bb[1]) / 2, (bb[2] + bb[3]) / 2, (bb[4] + bb[5]) / 2]
     bsize = max(bb[1] - bb[0], bb[3] - bb[2], bb[5] - bb[4]) or 1.0
     half = bsize * BODY_VIEW_FACTOR
     results = []
 
     # ① 物面云图（两视角；物面 Mach 近均匀，用 CoefPressure 更能体现压力分布）
-    surf = _surface(body)
     surf_scalar = scalar
     if (surf.GetPointData().GetArray("CoefPressure") or surf.GetCellData().GetArray("CoefPressure")):
         surf_scalar = "CoefPressure"
-    srange = _range_near_body(surf, surf_scalar, bc, bsize)
+    # 稳健百分位范围优先（避免离群/远场均匀值把物面配成一片单色），退化时用近体范围
+    srange = _robust_range(surf, surf_scalar) or _range_near_body(surf, surf_scalar, bc, bsize)
     for tag, cp in [("a", (half * 0.6, -half * 0.8, half * 0.45)), ("b", (0.01, 0.01, half))]:
         p = os.path.join(out_dir, f"surf_{tag}.png")
         _render(surf, surf_scalar, p, w, h, focal=bc, half=bsize * 0.85, iso=True, srange=srange, cam_pos=cp)
@@ -270,6 +274,122 @@ _FAR_HINT = ("far", "freestream", "inlet", "outlet", "internal", "interior",
              "volume", "fluid", "domain", "symmetry", "elem", "background")
 
 
+def _domain_bounds(blocks):
+    """所有块并集的包围盒。"""
+    lo = [float("inf")] * 3
+    hi = [float("-inf")] * 3
+    any_ = False
+    for _, b in blocks:
+        if b.GetNumberOfPoints() == 0:
+            continue
+        bb = b.GetBounds()
+        for a in range(3):
+            lo[a] = min(lo[a], bb[2 * a]); hi[a] = max(hi[a], bb[2 * a + 1])
+        any_ = True
+    if not any_:
+        return None
+    return (lo[0], hi[0], lo[1], hi[1], lo[2], hi[2])
+
+
+def _maxdim(bb):
+    return max(bb[1] - bb[0], bb[3] - bb[2], bb[5] - bb[4])
+
+
+def _is_volume_block(b, sample=25):
+    """体网格块（含 3D 单元：四面体/六面体/棱柱/金字塔…）。纯面块只有 2D 单元。"""
+    n = b.GetNumberOfCells()
+    if n == 0:
+        return False
+    vol3d = {10, 11, 12, 13, 14, 24, 25, 26, 29}  # tetra/voxel/hexa/wedge/pyramid/…（二次单元）
+    step = max(1, n // sample)
+    for i in range(0, n, step):
+        if b.GetCellType(i) in vol3d:
+            return True
+    return False
+
+
+def _isolate_body(blocks, compact_frac=0.3, planar_frac=0.15):
+    """外流：隔离飞行器/弹体**本体面**（紧凑面块），排除跨域远场/对称面与体网格。
+
+    判据（几何式，不靠块名/单元数——外流 CGNS 常按单元类型 Elem_* 命名，语义名失效）：
+      - 体网格块（含 3D 单元）→ 排除；
+      - 面块"包围盒最大边 ≥ compact_frac×整域最大边"→ 跨域远场，排除；
+      - 面块**近平面**（最小边≈0）且"最大边 ≥ planar_frac×整域"→ 对称面/远场平面，排除；
+      - 其余紧凑面块 = 本体 + 舵面/翼 → 合并提表面。
+    仅当"既有紧凑面块、又有跨域块（远场/对称面/体网格）"才判为外流并隔离；否则返回 None，
+    交调用方回退整域行为（内流：燃烧室/流道，整域即关心区）。
+    """
+    dom = _domain_bounds(blocks)
+    if dom is None:
+        return None
+    dmax = _maxdim(dom)
+    if dmax <= 0:
+        return None
+    compact, has_spanning = [], False
+    for name, b in blocks:
+        if b.GetNumberOfPoints() == 0:
+            continue
+        if _is_volume_block(b):
+            has_spanning = True
+            continue
+        bb = b.GetBounds()
+        dims = sorted([bb[1] - bb[0], bb[3] - bb[2], bb[5] - bb[4]])
+        mx = dims[2]
+        planar = mx > 0 and dims[0] < 0.02 * mx
+        if mx >= compact_frac * dmax or (planar and mx >= planar_frac * dmax):
+            has_spanning = True          # 跨域远场 / 对称面 / 远场平面
+            continue
+        compact.append((name, b))
+    if not compact or not has_spanning:
+        return None                      # 内流或无远场 → 不隔离
+    ap = vtk.vtkAppendFilter()
+    for _, b in compact:
+        ap.AddInputData(b)
+    ap.Update()
+    surf = _surface(ap.GetOutput())
+    # 防误判：内流的小进出口 patch 也会是"紧凑面块"。要求隔离出的本体足够**大且三维**，
+    # 否则判为内流回退整域（避免把 DLR 燃烧室的小 inlet patch 当成"弹体"）。
+    if surf.GetNumberOfPoints() < 200:
+        return None
+    bb = surf.GetBounds()
+    dims = sorted([bb[1] - bb[0], bb[3] - bb[2], bb[5] - bb[4]])
+    if dims[2] <= 0 or dims[0] < 0.01 * dims[2]:   # 退化/平面 → 非三维本体
+        return None
+    return surf
+
+
+def _robust_range(dataset, scalar, lo=2.0, hi=98.0, sample=6000):
+    """标量的百分位稳健范围，避免离群/远场均匀值把云图配色冲成一片单色。"""
+    arr = (dataset.GetPointData().GetArray(scalar)
+           or dataset.GetCellData().GetArray(scalar))
+    if arr is None:
+        return None
+    n = arr.GetNumberOfTuples()
+    if n == 0:
+        return None
+    step = max(1, n // sample)
+    vals = []
+    for i in range(0, n, step):
+        v = arr.GetComponent(i, 0)
+        if v == v:                       # 排除 NaN
+            vals.append(v)
+    if not vals:
+        return None
+    vals.sort()
+    m = len(vals)
+
+    def pct(p):
+        k = (m - 1) * p / 100.0
+        f = int(k)
+        c = min(f + 1, m - 1)
+        return vals[f] + (vals[c] - vals[f]) * (k - f)
+
+    r0, r1 = pct(lo), pct(hi)
+    if r1 <= r0:
+        r0, r1 = vals[0], vals[-1]
+    return (r0, r1) if r1 > r0 else None
+
+
 def _pick_body_surface(blocks):
     """挑最能代表模型的表面。
 
@@ -308,7 +428,7 @@ def render_thumbnail(multiblock, out_path, w=384, h=384):
     blocks = _named_blocks(multiblock)
     if not blocks:
         return False
-    body = _pick_body_surface(blocks)
+    body = _isolate_body(blocks) or _pick_body_surface(blocks)
     if body is None or body.GetNumberOfPoints() == 0:
         return False
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
@@ -379,7 +499,7 @@ def render_turntable(multiblock, out_dir, n_frames: int = 24, w: int = 440, h: i
     blocks = _named_blocks(multiblock)
     if not blocks:
         return 0
-    body = _pick_body_surface(blocks)
+    body = _isolate_body(blocks) or _pick_body_surface(blocks)
     if body is None or body.GetNumberOfPoints() == 0:
         return 0
     os.makedirs(out_dir, exist_ok=True)
