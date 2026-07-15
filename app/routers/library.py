@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -176,6 +177,35 @@ def case_previews(case_id: int, db: Session = Depends(get_db)):
         return {"available": False, "reason": "仅仿真算例有切片快照"}
     # 非阻塞：已缓存直接给 urls；否则后台渲染 + 返回 rendering，供前端轮询（不卡请求）。
     return viz.start_previews(c.storage_uri)
+
+
+@router.delete("/cases/{case_id}")
+def delete_case(case_id: int, db: Session = Depends(get_db)):
+    """从资源库删除一个算例（**只删库内记录 + 预览缓存，绝不动用户原始文件**）。
+
+    级联删其测量与工况对齐（ORM cascade）；顺带清理因此变空的孤儿工况。
+    """
+    c = db.get(Case, case_id)
+    if c is None:
+        raise HTTPException(404, "算例不存在")
+    name = c.name
+    op_ids = {lnk.op_id for lnk in c.op_links}
+    # 删预览缓存（可再生；只删该算例专属目录，不碰 _srccache/原始文件）
+    try:
+        pdir = Path(viz.preview_dir(c.storage_uri))
+        if pdir.exists() and pdir.parent.resolve() == Path(viz.settings.previews_dir).resolve():
+            shutil.rmtree(pdir, ignore_errors=True)
+    except Exception:  # noqa: BLE001
+        pass
+    db.delete(c)          # cascade: measurements + op_links
+    db.flush()
+    # 清理无算例关联的孤儿工况
+    for oid in op_ids:
+        op = db.get(OperatingPoint, oid)
+        if op is not None and not op.links:
+            db.delete(op)
+    db.commit()
+    return {"ok": True, "deleted": name, "note": "已删库内记录与预览缓存；原始文件未改动"}
 
 
 # ------------------------------------------------------------------ PENDING 人工对齐

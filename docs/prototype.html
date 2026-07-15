@@ -1527,11 +1527,11 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
       if(head) head.textContent='对比评估 · 工况 '+op;
       l3.innerHTML=opBar(op)+'<div class="placeholder">对比中…</div>';
       var d=await getJSON(API+'/compare/operating-point/'+encodeURIComponent(op));
-      var mchip=document.getElementById('cmp-mode');
+      var modeText='', modeColor='';   // 模式徽章：l3.innerHTML=html 之后再写进新的 #cmp-mode（否则被覆盖成空）
       if(!d||d.mode==='none'||(!d.ranking&&!d.rows)){ l3.innerHTML=opBar(op)+'<div class="placeholder" style="padding:30px">'+((d&&d.reason)||'无可对比数据')+'</div>'; bindOp(); markLive(); return; }
       var html=opBar(op);
       if(d.mode==='truth'){
-        if(mchip) mchip.textContent='真值模式 · 参照 '+d.truth_source;
+        modeText='真值模式 · 参照 '+d.truth_source+'（对各家仿真评级）';
         var units=d.ranking.map(function(r){return r.unit;});
         // 排名条形图
         html+='<div class="sect-label">各单位平均偏差（越短越准 · 相对实验真值）</div>'+barChart(d.ranking.map(function(r){return {label:r.unit,value:r.avg_deviation,color:devColor3(r.avg_deviation)};}),'%');
@@ -1542,7 +1542,7 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
             var st=row.status==='正常'?'<span class="badge b-good">正常</span>':'<span class="badge b-warn">'+row.status+'</span>';
             return '<tr class="stripe '+(row.status==='正常'?'ok':'warn')+'"><td class="qty">'+row.quantity+' <small style="color:var(--text-3)">'+(row.unit_dim||'')+'</small></td><td class="num">'+row.truth+'</td>'+tds+'<td>'+st+'</td></tr>'; }).join('')+'</tbody></table></div>';
       } else { // consensus
-        if(mchip){ mchip.textContent='多源交叉对比 · 无实验真值'; mchip.style.color='var(--warn)'; }
+        modeText='多源交叉对比 · 无实验真值（不评级，只看一致性）'; modeColor='var(--warn)';
         var us=d.consensus.map(function(c){return c.unit;});
         html+='<div class="relbanner" style="border-left-color:var(--warn);background:var(--pending-bg)"><span class="ic">ℹ️</span><div><b>该工况无实验真值</b>，改用<b>多源交叉对比</b>：以各家均值为共识基准，看谁离共识近、谁离群。<b>不评级</b>（无真值不宜定优劣，仅看一致性）。要正式评级请补入该工况的实验真值。</div></div>';
         html+='<div class="sect-label">各单位平均"离共识"程度（越短越贴近多数）</div>'+barChart(d.consensus.map(function(c){return {label:c.unit,value:c.avg_dev_from_mean,color:c.unit===d.outlier_unit?'var(--crit)':'var(--u1)'};}),'%');
@@ -1552,6 +1552,7 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
             return '<tr class="stripe '+(row.status==='一致'?'ok':'warn')+'"><td class="qty">'+row.quantity+' <small style="color:var(--text-3)">'+(row.unit_dim||'')+'</small></td>'+tds+'<td class="num">'+row.mean+' ± '+row.std+'</td><td class="num" style="color:'+(row.cv_pct<=10?'var(--good)':'var(--warn)')+'">'+row.cv_pct+'%</td><td><span class="badge '+(row.status==='一致'?'b-good':'b-warn')+'">'+row.status+'</span></td></tr>'; }).join('')+'</tbody></table></div>';
       }
       l3.innerHTML=html; bindOp(); markLive();
+      var mc=document.getElementById('cmp-mode'); if(mc){ mc.textContent=modeText; mc.style.color=modeColor||''; }
     }
     function bindOp(){ var s=document.getElementById('cmp-op'); if(s) s.addEventListener('change', function(){ renderOp(s.value); }); }
     renderOp(ops[0]);
@@ -1577,9 +1578,17 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
         '<span class="badge '+confCls(c.parse_confidence)+'"><span class="d"></span>'+c.parse_confidence+'</span>'+
         '<span style="margin-left:auto;color:var(--text-3);font-size:12px;font-family:var(--mono)">'+c.unit+' · '+(c.delivery||'')+'</span></div>'+
         '<div class="meta">'+meta.map(function(p){return '<span>'+p+'</span>';}).join('')+'</div>'+
-        '<div class="acts"><button class="mini dw-open">查看数据 →</button><button class="mini" data-go="report">报告</button></div></div></div>';
+        '<div class="acts"><button class="mini dw-open">查看数据 →</button><button class="mini" data-go="report">报告</button><button class="mini del-case" data-cid="'+c.id+'" data-name="'+(c.name||'').replace(/"/g,'')+'" style="margin-left:auto;color:var(--crit)">🗑 删除</button></div></div></div>';
     }).join('');
     // 重挂事件（openDrawer/refreshSel 为主脚本全局函数）
+    wrap.querySelectorAll('.del-case').forEach(function(b){ b.addEventListener('click', async function(e){ e.stopPropagation();
+      var cid=b.getAttribute('data-cid'), nm=b.getAttribute('data-name');
+      if(!confirm('从资源库删除「'+nm+'」？\n（只删库内记录与预览缓存，不会动你的原始文件）')) return;
+      b.disabled=true; b.textContent='删除中…';
+      var r=await fetch(API+'/cases/'+cid,{method:'DELETE'}).then(function(x){return x.json();}).catch(function(){return null;});
+      if(r&&r.ok){ toast('已删除「'+nm+'」'); liveCases(); liveUnits&&liveUnits(); liveCompare&&liveCompare(); liveReport&&liveReport(); livePending&&livePending(); }
+      else { toast('删除失败'); b.disabled=false; b.textContent='🗑 删除'; }
+    }); });
     wrap.querySelectorAll('.dcard').forEach(function(card){
       card.addEventListener('click', function(e){ if(e.target.closest('input,button')) return; if(window.openDrawer) window.openDrawer(card); });
       var chk=card.querySelector('.chk'); if(chk&&window.refreshSel) chk.addEventListener('change', window.refreshSel);
@@ -2021,7 +2030,7 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
         :'<div class="note">切片未生成</div>'))+'</div>';
       P['a-cloud']='<div class="card card-pad"><h3>三维可视化 · 交互（vtk.js WebGL）<span class="badge b-med" style="margin-left:auto"><span class="d"></span>真三维</span></h3>'+
         '<div id="v3d" class="v3d"><div class="placeholder" style="border:0;background:transparent">进入面板加载三维模型…</div></div>'+
-        '<div class="tt-ctl"><span class="chip">上色：<select id="v3d-scalar" class="model-pick" style="font-size:12px"></select></span><span class="chip">显示：<select id="v3d-repr" class="model-pick" style="font-size:12px"><option value="surface">表面</option><option value="edges">表面+网格</option><option value="wire">线框</option><option value="points">点</option></select></span><span class="chip">透明 <input type="range" id="v3d-op" min="0.15" max="1" step="0.05" value="1" style="width:64px;vertical-align:middle"></span><span id="v3d-status" style="font-size:11px;color:var(--text-3);margin-left:auto"></span></div>'+
+        '<div class="tt-ctl"><span class="chip">上色：<select id="v3d-scalar" class="model-pick" style="font-size:12px"></select></span><span class="chip">色卡：<select id="v3d-cmap" class="model-pick" style="font-size:12px"><option value="coolwarm">冷暖 Cool-Warm</option><option value="jet">彩虹 Jet</option><option value="viridis">Viridis</option><option value="blackbody">黑体 Black-Body</option><option value="gray">灰度 Gray</option></select></span><span class="chip">显示：<select id="v3d-repr" class="model-pick" style="font-size:12px"><option value="surface">表面</option><option value="edges">表面+网格</option><option value="wire">线框</option><option value="points">点</option></select></span><span class="chip">透明 <input type="range" id="v3d-op" min="0.15" max="1" step="0.05" value="1" style="width:64px;vertical-align:middle"></span><span id="v3d-status" style="font-size:11px;color:var(--text-3);margin-left:auto"></span></div>'+
         '<div class="note">🖱 拖动旋转 · 滚轮缩放 · Shift+拖动平移（vtk.js 读边界面 VTP，按物理量真实上色）。离线时自动降级为转台快照。</div>'+
         '<div class="sect-label" style="margin-top:14px">多方向切片</div>'+slc+'</div>';
       P['a-slice']='<div class="card card-pad"><h3>沿程面平均 <span class="badge b-med" style="margin-left:auto"><span class="d"></span>formulas 公式库</span></h3><div class="toolbar" style="margin:6px 0 10px"><span class="chip">Y轴：<select id="xs-field" class="model-pick" style="font-size:12px"><option value="P_static">静压</option><option value="T_static">静温</option><option value="Mach">马赫数</option><option value="T0">总温</option><option value="P0">总压</option></select></span><span class="chip">切片数 100</span><span id="xs-note" style="font-size:11.5px;color:var(--text-3);align-self:center"></span></div><div id="xs-chart"><p class="muted">加载中…</p></div></div>';
@@ -2094,23 +2103,46 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
       var mapper=vtk.Rendering.Core.vtkMapper.newInstance({scalarVisibility:false}); mapper.setInputData(poly);
       var actor=vtk.Rendering.Core.vtkActor.newInstance(); actor.setMapper(mapper); actor.getProperty().setColor(0.62,0.74,0.94); renderer.addActor(actor);
       var lut=vtk.Rendering.Core.vtkColorTransferFunction.newInstance();
-      // 手动蓝→青→绿→黄→红 冷暖色标：不依赖 vtkColorMaps 预设（此打包里它挂在
-      // vtkColorTransferFunction.vtkColorMaps 而非 Rendering.Core.vtkColorMaps，直接引用会 undefined→空 LUT→整面渲成黑）。
+      // 多色卡（手动 RGB 控制点，不依赖 vtkColorMaps 预设——此打包预设挂在
+      // vtkColorTransferFunction.vtkColorMaps 而非 Rendering.Core，名字查找也不稳，故自带 ramp）。
+      var RAMPS={
+        coolwarm:[[0,0.23,0.30,0.75],[0.5,0.87,0.87,0.87],[1,0.71,0.09,0.15]],
+        jet:[[0,0,0,0.5],[0.12,0,0,1],[0.37,0,1,1],[0.5,0.2,1,0.4],[0.62,1,1,0],[0.87,1,0,0],[1,0.5,0,0]],
+        viridis:[[0,0.27,0.00,0.33],[0.25,0.23,0.32,0.55],[0.5,0.13,0.57,0.55],[0.75,0.37,0.79,0.38],[1,0.99,0.91,0.14]],
+        blackbody:[[0,0,0,0],[0.4,0.70,0.12,0],[0.75,0.97,0.63,0.10],[1,1,1,0.92]],
+        gray:[[0,0.06,0.06,0.06],[1,0.96,0.96,0.96]]
+      };
+      var curRamp='coolwarm', curScalar='__none__', curRange=[0,1];
       function buildLut(lo,hi){ lut.removeAllPoints(); if(!(hi>lo)) hi=lo+1e-6;
-        var st=[[0,0.23,0.30,0.75],[0.25,0.18,0.55,0.90],[0.5,0.28,0.68,0.30],[0.75,0.96,0.80,0.16],[1,0.86,0.20,0.13]];
-        st.forEach(function(s){ lut.addRGBPoint(lo+(hi-lo)*s[0], s[1],s[2],s[3]); });
+        (RAMPS[curRamp]||RAMPS.coolwarm).forEach(function(s){ lut.addRGBPoint(lo+(hi-lo)*s[0], s[1],s[2],s[3]); });
         if(lut.setMappingRange) lut.setMappingRange(lo,hi); if(lut.updateRange) lut.updateRange(); }
       buildLut(0,1); mapper.setLookupTable(lut);
+      // 色卡图例（scalar bar）—— 随激活标量显示量程刻度
+      var sbar=vtk.Rendering.Core.vtkScalarBarActor.newInstance(); sbar.setScalarsToColors(lut); sbar.setVisibility(false);
+      try{ sbar.setAxisTextStyle({fontColor:'white',fontSize:14}); sbar.setTickTextStyle({fontColor:'white',fontSize:11}); }catch(e){}
+      renderer.addActor(sbar);
+      // 坐标系 gizmo（右下角 XYZ 轴向）
+      try{ var _axes=vtk.Rendering.Core.vtkAxesActor.newInstance();
+        var _omw=vtk.Interaction.Widgets.vtkOrientationMarkerWidget.newInstance({actor:_axes, interactor:renderWindow.getInteractor()});
+        _omw.setEnabled(true);
+        _omw.setViewportCorner(vtk.Interaction.Widgets.vtkOrientationMarkerWidget.Corners.BOTTOM_RIGHT);
+        _omw.setViewportSize(0.14); _omw.setMinPixelSize(64); _omw.setMaxPixelSize(130);
+      }catch(e){}
       var pd=poly.getPointData(), names=[];
       for(var i=0;i<pd.getNumberOfArrays();i++){ var a=pd.getArrayByIndex(i); if(a&&a.getNumberOfComponents()===1) names.push(a.getName()); }
       // 标量优先级：兼顾 Fluent 规范名（Temperature/Pressure/…）与 OpenFOAM/CGNS 名（T/p/U/Mach…）
       var pri=['Temperature','T','Mach','Pressure','p','Density','rho','VelocityMagnitude','Umag','U',
                'VelocityX','VelocityY','VelocityZ','TKE','k','Qdot','TotalReactionRate'];
       names.sort(function(a,b){ var ia=pri.indexOf(a),ib=pri.indexOf(b); ia=ia<0?99:ia; ib=ib<0?99:ib; return ia-ib||a.localeCompare(b); });
-      function applyScalar(name){ if(name==='__none__'){ mapper.setScalarVisibility(false); actor.getProperty().setColor(0.62,0.74,0.94); renderWindow.render(); return; }
-        var arr=pd.getArrayByName(name); if(!arr) return; var rng=robust[name]||arr.getRange(); pd.setActiveScalars(name);
+      function applyScalar(name){ curScalar=name;
+        if(name==='__none__'){ mapper.setScalarVisibility(false); actor.getProperty().setColor(0.62,0.74,0.94); sbar.setVisibility(false); renderWindow.render(); return; }
+        var arr=pd.getArrayByName(name); if(!arr) return; var rng=robust[name]||arr.getRange(); curRange=rng; pd.setActiveScalars(name);
         buildLut(rng[0],rng[1]);
-        mapper.setLookupTable(lut); if(mapper.setScalarModeToUsePointData) mapper.setScalarModeToUsePointData(); mapper.setScalarVisibility(true); renderWindow.render(); }
+        mapper.setLookupTable(lut); if(mapper.setScalarModeToUsePointData) mapper.setScalarModeToUsePointData(); mapper.setScalarVisibility(true);
+        try{ sbar.setAxisLabel(name); }catch(e){} sbar.setScalarsToColors(lut); sbar.setVisibility(true); renderWindow.render(); }
+      // 切换色卡：重建 LUT（同一量程），刷新物面与图例
+      var cmsel=document.getElementById('v3d-cmap'); if(cmsel) cmsel.onchange=function(){ curRamp=cmsel.value;
+        buildLut(curRange[0],curRange[1]); mapper.setLookupTable(lut); sbar.setScalarsToColors(lut); renderWindow.render(); };
       var ssel=document.getElementById('v3d-scalar'); if(ssel){ ssel.innerHTML='<option value="__none__">仅几何</option>'+names.map(function(n){return '<option value="'+n+'">'+n+'</option>';}).join('');
         // 默认选优先级最高的可用物理量（不再局限于 OpenFOAM 名，Fluent 也能自动上色）
         var first=names.filter(function(n){return pri.indexOf(n)>=0;})[0]||names[0]; if(first){ ssel.value=first; applyScalar(first); } ssel.onchange=function(){ applyScalar(ssel.value); }; }
