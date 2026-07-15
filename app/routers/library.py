@@ -18,6 +18,7 @@ from app.db.models import (
     Confidence, CaseKind,
 )
 from app.services import ingest as ingest_svc
+from app.services import ingest_jobs
 from app.services import operating_point as op_svc
 from app.services import viz
 
@@ -40,6 +41,13 @@ class IngestDirReq(BaseModel):
     delivery_label: str = "默认交付"
 
 
+class IngestStartReq(BaseModel):
+    path: str
+    unit_name: str
+    delivery_label: str = "默认交付"
+    batch: bool = False
+
+
 @router.post("/ingest/file")
 def ingest_file(req: IngestFileReq, db: Session = Depends(get_db)):
     return ingest_svc.ingest_file(db, req.path, unit_name=req.unit_name,
@@ -50,6 +58,28 @@ def ingest_file(req: IngestFileReq, db: Session = Depends(get_db)):
 def ingest_dir(req: IngestDirReq, db: Session = Depends(get_db)):
     return ingest_svc.ingest_directory(db, req.directory, unit_name=req.unit_name,
                                        delivery_label=req.delivery_label)
+
+
+@router.post("/ingest/start")
+def ingest_start(req: IngestStartReq):
+    """启动**后台**入库任务（单文件或批量目录），立即返回 job_id。关弹窗不中断，前端轮询进度。"""
+    jid = ingest_jobs.start_ingest(req.path, req.unit_name, req.delivery_label, req.batch)
+    return {"job_id": jid}
+
+
+@router.get("/ingest/jobs")
+def ingest_jobs_list():
+    """活动 + 最近入库任务（精简，供顶部徽章/恢复轮询）。"""
+    return {"jobs": ingest_jobs.list_jobs()}
+
+
+@router.get("/ingest/jobs/{job_id}")
+def ingest_job(job_id: str):
+    """单个入库任务的完整进度（当前文件+步骤+已完成日志）。"""
+    j = ingest_jobs.get_job(job_id)
+    if j is None:
+        raise HTTPException(404, "任务不存在")
+    return j
 
 
 @router.post("/ingest/file/stream")

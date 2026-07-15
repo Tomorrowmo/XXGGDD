@@ -631,6 +631,7 @@
       </div>
       <div class="toolbar">
         <button class="btn primary sm" id="ingest-open">＋ 批量入库</button>
+        <span id="ingest-badge" onclick="document.getElementById('ingest-open').click()" style="display:none;cursor:pointer;font-size:12px;color:var(--accent);border:1px solid var(--accent);border-radius:99px;padding:4px 10px;margin-left:8px" title="点击查看入库进度"></span>
         <span class="chip">单位 ▾</span><span class="chip">类型 ▾</span><span class="chip">工况 ▾</span><span class="chip">置信度 ▾</span>
         <div class="spacer"></div>
         <button class="btn primary sm dim" id="go-compare">已选 <span id="seln">0</span> 项 → 去对比</button>
@@ -1799,8 +1800,33 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
   (function wireIngest(){
     var mask=document.getElementById('ing-mask'), modal=document.getElementById('ing-modal');
     var openBtn=document.getElementById('ingest-open'); if(!modal||!openBtn) return;
-    function open(){ modal.classList.add('show'); mask.classList.add('show'); }
-    function close(){ modal.classList.remove('show'); mask.classList.remove('show'); }
+    // 入库改**后台任务**：点了就在服务端跑，关弹窗也不中断；前端轮询进度，顶部徽章常驻。
+    var pollTimer=null, activeJob=null;
+    var badge=document.getElementById('ingest-badge');
+    var BL={detect:'识别类型',dedup:'去重',parse:'解析·关键量',align:'工况对齐',write:'写库',slice:'切片渲染'};
+    function stepIc(s){ return s==='run'?'<span class="ing-spin"></span>':(s==='ok'?'<span style="color:var(--good)">✓</span>':(s==='fail'?'<span style="color:var(--crit)">✗</span>':'<span style="color:var(--text-3)">⤼</span>')); }
+    function setBadge(j){ if(!badge) return; if(j&&j.status==='running'){ badge.style.display=''; badge.textContent='⟳ 入库中 '+j.done+'/'+j.total; } else badge.style.display='none'; }
+    function renderJob(j){
+      var msg=document.getElementById('ing-msg'), rd=document.getElementById('ing-result'); if(!msg||!rd) return;
+      var cur=j.current, curHtml='';
+      if(cur){ curHtml='<div style="border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:8px;background:var(--surface)"><div style="font-weight:600;font-size:12.5px;margin-bottom:5px">'+(j.total>1?(cur.index+'/'+cur.total+' · '):'')+cur.name+'</div>'
+        +['detect','dedup','parse','align','write','slice'].filter(function(k){return cur.steps[k];}).map(function(k){var s=cur.steps[k];return '<div class="ing-step"><span class="ing-ic">'+stepIc(s.status)+'</span><b>'+(BL[k]||k)+'</b>'+(s.detail?'<span class="ing-det">'+s.detail+'</span>':'')+'</div>';}).join('')+'</div>'; }
+      var logHtml=(j.log||[]).map(function(x){var mk=x.ok?(x.deduped?'· ':'✓ '):'✗ ';var col=x.ok?'var(--good)':'var(--crit)';var tail=x.deduped?'已存在':(x.ok?((x.n_measurements||0)+' 测量'):(x.reason||'失败'));return '<div style="color:'+col+'">'+mk+x.name+' — '+tail+'</div>';}).join('');
+      rd.innerHTML=curHtml+(logHtml?'<div style="font-size:12px;max-height:150px;overflow:auto;display:flex;flex-direction:column;gap:2px">'+logHtml+'</div>':'');
+      if(j.status==='running'){ msg.textContent='入库中 '+j.done+'/'+j.total+(cur?('：'+cur.name):'')+'（可关闭本窗口，后台继续）'; msg.style.color='var(--text-2)'; }
+      else if(j.status==='done'){ msg.textContent='✓ 完成：'+j.ok+' / '+j.total+' 入库'; msg.style.color='var(--good)'; }
+      else { msg.textContent='✗ '+(j.reason||'失败'); msg.style.color='var(--crit)'; }
+    }
+    function poll(jid){ clearTimeout(pollTimer);
+      getJSON(API+'/ingest/jobs/'+jid).then(function(j){ if(!j) return;
+        if(modal.classList.contains('show')) renderJob(j);
+        setBadge(j);
+        if(j.status==='running'){ pollTimer=setTimeout(function(){poll(jid);},1000); }
+        else { activeJob=null; setBadge(null); liveCases(); liveUnits(); livePending(); }
+      });
+    }
+    function open(){ modal.classList.add('show'); mask.classList.add('show'); if(activeJob) poll(activeJob); }
+    function close(){ modal.classList.remove('show'); mask.classList.remove('show'); }  // 任务后台继续，徽章仍在
     openBtn.addEventListener('click', open);
     document.getElementById('ing-close').addEventListener('click', close);
     mask.addEventListener('click', close);
@@ -1811,63 +1837,15 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
       var batch=document.getElementById('ing-batch').checked;
       var msg=document.getElementById('ing-msg'), rd=document.getElementById('ing-result');
       if(!unit||!path){ msg.textContent='请填单位和路径'; msg.style.color='var(--crit)'; return; }
-      msg.textContent='入库中…'; msg.style.color='var(--text-2)'; rd.innerHTML='';
-      // 批量目录：流式——逐文件推送各步骤进度 + 每文件小结
-      if(batch){
-        var BL={detect:'识别类型',dedup:'去重',parse:'解析·关键量',align:'工况对齐',write:'写库',slice:'切片渲染'};
-        var curBox=document.createElement('div'); curBox.style.cssText='border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:8px;background:var(--surface)';
-        var logDiv=document.createElement('div'); logDiv.style.cssText='font-size:12px;max-height:150px;overflow:auto;display:flex;flex-direction:column;gap:2px';
-        rd.appendChild(curBox); rd.appendChild(logDiv);
-        var bsteps={};
-        function bReset(t){ bsteps={}; curBox.innerHTML='<div style="font-weight:600;font-size:12.5px;margin-bottom:5px">'+t+'</div>'; }
-        function bStep(key,status,detail){ var row=bsteps[key]; if(!row){ row=document.createElement('div'); row.className='ing-step'; curBox.appendChild(row); bsteps[key]=row; }
-          var ic=status==='run'?'<span class="ing-spin"></span>':(status==='ok'?'<span style="color:var(--good)">✓</span>':(status==='fail'?'<span style="color:var(--crit)">✗</span>':'<span style="color:var(--text-3)">⤼</span>'));
-          row.innerHTML='<span class="ing-ic">'+ic+'</span><b>'+(BL[key]||key)+'</b>'+(detail?'<span class="ing-det">'+detail+'</span>':''); }
-        try{
-          var resp=await fetch(API+'/ingest/dir/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({directory:path,unit_name:unit,delivery_label:del})});
-          var reader=resp.body.getReader(), dec=new TextDecoder(), buf='';
-          while(true){ var ch=await reader.read(); if(ch.done) break;
-            buf+=dec.decode(ch.value,{stream:true}); var lines=buf.split('\n'); buf=lines.pop();
-            for(var i=0;i<lines.length;i++){ var line=lines[i].trim(); if(line.slice(0,5)!=='data:') continue; var data=line.slice(5).trim(); if(!data||data==='[DONE]') continue;
-              var o; try{o=JSON.parse(data);}catch(e){continue;}
-              if(o.type==='scan'){ msg.textContent='扫描到 '+o.total+' 个可入库文件，开始…'; }
-              else if(o.type==='file'){ bReset(o.index+'/'+o.total+' · '+o.name); msg.textContent='入库中 '+o.index+'/'+o.total+'：'+o.name; }
-              else if(o.type==='progress'){ bStep(o.step,o.status,o.detail); }
-              else if(o.type==='file_result'){ var mk=o.ok?(o.deduped?'· ':'✓ '):'✗ '; var col=o.ok?'var(--good)':'var(--crit)'; var tail=o.deduped?'已存在':(o.ok?((o.n_measurements||0)+' 测量'):(o.reason||'失败'));
-                var el=document.createElement('div'); el.style.color=col; el.textContent=mk+o.name+' — '+tail; logDiv.appendChild(el); logDiv.scrollTop=logDiv.scrollHeight; }
-              else if(o.type==='result'){ msg.textContent='完成：'+o.ok+' / '+o.total+' 入库'+(o.reason?('（'+o.reason+'）'):''); msg.style.color='var(--good)'; curBox.innerHTML=''; }
-            }
-          }
-          liveCases(); liveUnits(); livePending();
-        }catch(e){ msg.textContent='请求失败（后端未启动？）'; msg.style.color='var(--crit)'; }
-        return;
-      }
-      // 单文件：流式，逐步骤显示进度
-      var STEP_LABELS={detect:'识别类型',dedup:'去重 (SHA-256)',parse:'解析 · 提取关键量',align:'工况对齐',write:'写入库',slice:'切片渲染'};
-      var steps={};
-      function upsertStep(key,status,detail){
-        var row=steps[key];
-        if(!row){ row=document.createElement('div'); row.className='ing-step'; rd.appendChild(row); steps[key]=row; }
-        var ic=status==='run'?'<span class="ing-spin"></span>':(status==='ok'?'<span style="color:var(--good)">✓</span>':(status==='fail'?'<span style="color:var(--crit)">✗</span>':'<span style="color:var(--text-3)">⤼</span>'));
-        row.innerHTML='<span class="ing-ic">'+ic+'</span><b>'+(STEP_LABELS[key]||key)+'</b>'+(detail?'<span class="ing-det">'+detail+'</span>':'');
-      }
+      msg.textContent='启动入库…'; msg.style.color='var(--text-2)'; rd.innerHTML='';
       try{
-        var resp=await fetch(API+'/ingest/file/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:path,unit_name:unit,delivery_label:del})});
-        var reader=resp.body.getReader(), dec=new TextDecoder(), buf='', result=null;
-        while(true){ var ch=await reader.read(); if(ch.done) break;
-          buf+=dec.decode(ch.value,{stream:true}); var lines=buf.split('\n'); buf=lines.pop();
-          for(var i=0;i<lines.length;i++){ var line=lines[i].trim(); if(line.slice(0,5)!=='data:') continue;
-            var data=line.slice(5).trim(); if(!data||data==='[DONE]') continue;
-            var o; try{o=JSON.parse(data);}catch(e){continue;}
-            if(o.type==='progress'){ upsertStep(o.step,o.status,o.detail); }
-            else if(o.type==='result'){ result=o; }
-          }
-        }
-        if(result&&result.ok){ msg.textContent=result.deduped?'已存在（去重跳过）':'✓ 入库完成'; msg.style.color='var(--good)'; }
-        else { msg.textContent='✗ '+((result&&result.reason)||'失败'); msg.style.color='var(--crit)'; }
-        liveCases(); liveUnits(); livePending();  // 刷新资源库卡片 + 树/统计 + 待对齐
+        var r=await fetch(API+'/ingest/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:path,unit_name:unit,delivery_label:del,batch:batch})});
+        var d=await r.json(); if(!d||!d.job_id){ msg.textContent='启动失败'; msg.style.color='var(--crit)'; return; }
+        activeJob=d.job_id; poll(activeJob);
       }catch(e){ msg.textContent='请求失败（后端未启动？）'; msg.style.color='var(--crit)'; }
     });
+    // 页面载入：若有仍在跑的入库任务，恢复徽章 + 轮询（跨刷新/重进可见）
+    (async function(){ var d=await getJSON(API+'/ingest/jobs'); if(d&&d.jobs){ var run=d.jobs.filter(function(x){return x.status==='running';})[0]; if(run){ activeJob=run.id; setBadge(run); poll(run.id); } } })();
   })();
 
   // 服务器文件浏览器：从资源管理器式界面选入库路径（整机盘符可浏览）
