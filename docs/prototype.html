@@ -312,7 +312,10 @@
   .phasebar .seg{background:var(--surface-2)}
   /* raw data viewer */
   .expcurve{display:flex;gap:12px;align-items:stretch}
-  .chanpick{flex:none;width:190px;max-height:230px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:6px;background:var(--surface);display:flex;flex-direction:column;gap:2px}
+  .chansel{flex:none;width:210px;display:flex;flex-direction:column;gap:5px}
+  .chansearch{font-size:12px;padding:6px 9px;border:1px solid var(--border);border-radius:7px;background:var(--surface-2);color:var(--text);outline:none}
+  .chansearch:focus{border-color:var(--accent)}
+  .chanpick{flex:1;min-height:120px;max-height:230px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:6px;background:var(--surface);display:flex;flex-direction:column;gap:2px}
   .chanck{display:flex;gap:6px;align-items:center;font-size:11.5px;color:var(--text-2);padding:3px 5px;border-radius:5px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .chanck:hover{background:var(--surface-2);color:var(--text)}
   .chanck input{accent-color:var(--accent);flex:none}
@@ -1808,13 +1811,32 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
       var msg=document.getElementById('ing-msg'), rd=document.getElementById('ing-result');
       if(!unit||!path){ msg.textContent='请填单位和路径'; msg.style.color='var(--crit)'; return; }
       msg.textContent='入库中…'; msg.style.color='var(--text-2)'; rd.innerHTML='';
-      // 批量目录：仍走非流式（多文件汇总）
+      // 批量目录：流式——逐文件推送各步骤进度 + 每文件小结
       if(batch){
+        var BL={detect:'识别类型',dedup:'去重',parse:'解析·关键量',align:'工况对齐',write:'写库',slice:'切片渲染'};
+        var curBox=document.createElement('div'); curBox.style.cssText='border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:8px;background:var(--surface)';
+        var logDiv=document.createElement('div'); logDiv.style.cssText='font-size:12px;max-height:150px;overflow:auto;display:flex;flex-direction:column;gap:2px';
+        rd.appendChild(curBox); rd.appendChild(logDiv);
+        var bsteps={};
+        function bReset(t){ bsteps={}; curBox.innerHTML='<div style="font-weight:600;font-size:12.5px;margin-bottom:5px">'+t+'</div>'; }
+        function bStep(key,status,detail){ var row=bsteps[key]; if(!row){ row=document.createElement('div'); row.className='ing-step'; curBox.appendChild(row); bsteps[key]=row; }
+          var ic=status==='run'?'<span class="ing-spin"></span>':(status==='ok'?'<span style="color:var(--good)">✓</span>':(status==='fail'?'<span style="color:var(--crit)">✗</span>':'<span style="color:var(--text-3)">⤼</span>'));
+          row.innerHTML='<span class="ing-ic">'+ic+'</span><b>'+(BL[key]||key)+'</b>'+(detail?'<span class="ing-det">'+detail+'</span>':''); }
         try{
-          var r=await fetch(API+'/ingest/dir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({directory:path,unit_name:unit,delivery_label:del})});
-          var d=await r.json();
-          msg.textContent='完成：'+d.ok+' / '+d.total+' 入库'; msg.style.color='var(--good)';
-          rd.innerHTML='<div style="font-size:12px;color:var(--text-2);max-height:180px;overflow:auto">'+(d.results||[]).map(function(x){return '· '+(x.name||x.reason||'?')+' — '+(x.deduped?'已存在':(x.parse_status||x.reason||'ok'));}).join('<br>')+'</div>';
+          var resp=await fetch(API+'/ingest/dir/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({directory:path,unit_name:unit,delivery_label:del})});
+          var reader=resp.body.getReader(), dec=new TextDecoder(), buf='';
+          while(true){ var ch=await reader.read(); if(ch.done) break;
+            buf+=dec.decode(ch.value,{stream:true}); var lines=buf.split('\n'); buf=lines.pop();
+            for(var i=0;i<lines.length;i++){ var line=lines[i].trim(); if(line.slice(0,5)!=='data:') continue; var data=line.slice(5).trim(); if(!data||data==='[DONE]') continue;
+              var o; try{o=JSON.parse(data);}catch(e){continue;}
+              if(o.type==='scan'){ msg.textContent='扫描到 '+o.total+' 个可入库文件，开始…'; }
+              else if(o.type==='file'){ bReset(o.index+'/'+o.total+' · '+o.name); msg.textContent='入库中 '+o.index+'/'+o.total+'：'+o.name; }
+              else if(o.type==='progress'){ bStep(o.step,o.status,o.detail); }
+              else if(o.type==='file_result'){ var mk=o.ok?(o.deduped?'· ':'✓ '):'✗ '; var col=o.ok?'var(--good)':'var(--crit)'; var tail=o.deduped?'已存在':(o.ok?((o.n_measurements||0)+' 测量'):(o.reason||'失败'));
+                var el=document.createElement('div'); el.style.color=col; el.textContent=mk+o.name+' — '+tail; logDiv.appendChild(el); logDiv.scrollTop=logDiv.scrollHeight; }
+              else if(o.type==='result'){ msg.textContent='完成：'+o.ok+' / '+o.total+' 入库'+(o.reason?('（'+o.reason+'）'):''); msg.style.color='var(--good)'; curBox.innerHTML=''; }
+            }
+          }
           liveCases(); liveUnits(); livePending();
         }catch(e){ msg.textContent='请求失败（后端未启动？）'; msg.style.color='var(--crit)'; }
         return;
@@ -1993,7 +2015,7 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
       var d=pre||await getJSON(API+'/cases/'+cid+'/experiment'); var html=sel(cid);
       if(!d||!d.available){ pane.innerHTML=html+'<div class="placeholder" style="margin-top:12px">'+((d&&d.reason)||'无数据')+'</div>'; bind(); return; }
       html+='<div class="stat-row"><div class="stat"><div class="k">通道</div><div class="v">'+d.n_channels+'</div></div><div class="stat"><div class="k">行数</div><div class="v">'+d.n_rows.toLocaleString()+'</div></div><div class="stat"><div class="k">稳态段</div><div class="v">'+((d.phases.steady[1]-d.phases.steady[0])).toFixed(1)+'<small>s</small></div></div><div class="stat"><div class="k">异常</div><div class="v" style="color:'+(d.anomalies.length?'var(--warn)':'var(--good)')+'">'+d.anomalies.length+'</div></div></div>';
-      html+='<div class="sect-label">时序曲线 · 勾选物理量切换显示</div><div class="expcurve"><div id="exp-chanpick" class="chanpick"></div><div id="exp-chart" class="chartbox" style="flex:1;min-width:0"></div></div>';
+      html+='<div class="sect-label">时序曲线 · 勾选物理量切换显示</div><div class="expcurve"><div class="chansel"><input id="exp-chansearch" class="chansearch" placeholder="🔍 筛选通道（如 流道 / 室压）"><div id="exp-chanpick" class="chanpick"></div></div><div id="exp-chart" class="chartbox" style="flex:1;min-width:0"></div></div>';
       html+='<div class="sect-label">阶段分割</div><div class="card card-pad">'+phaseBar(d.phases)+'<p class="note">关键量从主级稳态段提取。</p></div>';
       html+='<div class="sect-label">通道统计（全 '+d.n_channels+' 路）</div><div class="tblwrap" style="max-height:300px;overflow:auto"><table><thead><tr><th>通道</th><th class="num">最小</th><th class="num">最大</th><th class="num">均值</th><th class="num">标准差</th></tr></thead><tbody>'+d.stats.slice(0,30).map(function(s){return '<tr><td class="qty">'+s.label+'</td><td class="num">'+s.min+'</td><td class="num">'+s.max+'</td><td class="num">'+s.mean+'</td><td class="num">'+s.std+'</td></tr>';}).join('')+'</tbody></table></div>';
       html+='<div class="sect-label">稳态关键量 → 真值</div><div class="tblwrap" style="max-height:280px;overflow:auto"><table><thead><tr><th>物理量</th><th class="num">值</th><th class="num">单位</th><th>提取</th></tr></thead><tbody>'+d.steady_qoi.slice(0,30).map(function(q){return '<tr><td class="qty">'+q.quantity+'</td><td class="num">'+q.value+'</td><td class="num">'+q.unit+'</td><td class="muted" style="color:var(--text-2)">'+q.method+'</td></tr>';}).join('')+'</tbody></table></div>';
@@ -2008,8 +2030,11 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
       if(!series.length){ chart.innerHTML=lineChart(d.curves||[],470,210); return; }
       pick.innerHTML=series.map(function(s,i){ return '<label class="chanck" title="'+s.label+'"><input type="checkbox" data-si="'+i+'"'+(i<4?' checked':'')+'>'+_shortLbl(s.label)+'</label>'; }).join('');
       function draw(){ var sel=[]; pick.querySelectorAll('input:checked').forEach(function(cb){ var i=+cb.getAttribute('data-si'); if(series[i]) sel.push({label:_shortLbl(series[i].label),x:x,y:series[i].y}); });
-        chart.innerHTML = sel.length? lineChart(sel.slice(0,8),470,210) : '<p class="muted" style="padding:24px;text-align:center">勾选左侧物理量以显示曲线</p>'; }
+        chart.innerHTML = sel.length? lineChart(sel.slice(0,8),470,210) : '<p class="muted" style="padding:24px;text-align:center">勾选左侧物理量以显示曲线（最多同时 8 路）</p>'; }
       pick.addEventListener('change',draw); draw();
+      var srch=document.getElementById('exp-chansearch');
+      if(srch) srch.addEventListener('input', function(){ var q=srch.value.trim().toLowerCase();
+        pick.querySelectorAll('.chanck').forEach(function(l){ l.style.display=(!q||(l.getAttribute('title')||'').toLowerCase().indexOf(q)>=0)?'':'none'; }); });
     }
     function setupRaw(cid,total){
       var box=document.getElementById('exp-raw'); if(!box) return; var off=0, lim=50;

@@ -14,6 +14,17 @@ import glob
 import json
 
 
+def _silence_vtk():
+    """把 VTK 输出窗口重定向到非 GUI（字符串）窗口——否则 Windows 上 VTK 的告警/错误会弹出
+    vtkOutputWindow 弹窗抢焦点，入库/渲染时看着像卡死。同时关全局告警显示。"""
+    try:
+        import vtk
+        vtk.vtkOutputWindow.SetInstance(vtk.vtkStringOutputWindow())
+        vtk.vtkObject.GlobalWarningDisplayOff()
+    except Exception:
+        pass
+
+
 def _emit(d):
     print(json.dumps(d, ensure_ascii=False))
 
@@ -236,6 +247,7 @@ def main() -> None:
     case_path, out_dir = sys.argv[1], sys.argv[2]
     arg3 = sys.argv[3] if len(sys.argv) > 3 else "T"
     os.makedirs(out_dir, exist_ok=True)
+    _silence_vtk()   # 抑制 Windows 上 VTK 弹窗（否则看着像卡死）
     try:
         if arg3 == "vtp":
             _emit(_render_vtp(case_path, out_dir))

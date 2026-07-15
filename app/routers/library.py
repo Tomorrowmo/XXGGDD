@@ -75,6 +75,53 @@ def ingest_file_stream(req: IngestFileReq):
     return StreamingResponse(gen(), media_type="text/event-stream", headers=SSE_HEADERS)
 
 
+@router.post("/ingest/dir/stream")
+def ingest_dir_stream(req: IngestDirReq):
+    """流式**批量**入库：先报扫描到的文件数，再逐文件推送各步骤进度 + 每文件小结（SSE）。"""
+    def sse(o):
+        return f"data: {json.dumps(o, ensure_ascii=False)}\n\n"
+
+    def gen():
+        s = SessionLocal()
+        try:
+            directory = Path(req.directory)
+            if not directory.is_dir():
+                yield sse({"type": "result", "ok": 0, "total": 0, "reason": "目录不存在"})
+                yield "data: [DONE]\n\n"
+                return
+            files = [p for p in sorted(directory.rglob("*"))
+                     if p.is_file() and ingest_svc.detect_kind(p) is not None]
+            total = len(files)
+            yield sse({"type": "scan", "total": total})
+            okc = 0
+            for i, p in enumerate(files):
+                yield sse({"type": "file", "name": p.name, "index": i + 1, "total": total})
+                res = {"ok": False}
+                try:
+                    for kind_, payload in ingest_svc.ingest_steps(
+                            s, p, unit_name=req.unit_name,
+                            delivery_label=req.delivery_label, with_slices=True):
+                        if kind_ == "result":
+                            res = payload
+                        else:
+                            yield sse({"type": "progress", **payload})
+                except Exception as e:  # noqa: BLE001
+                    res = {"ok": False, "reason": str(e)[:120]}
+                if res.get("ok"):
+                    okc += 1
+                yield sse({"type": "file_result", "name": p.name,
+                           "ok": bool(res.get("ok")), "deduped": res.get("deduped"),
+                           "reason": res.get("reason"), "n_measurements": res.get("n_measurements")})
+            yield sse({"type": "result", "ok": okc, "total": total})
+        except Exception as e:  # noqa: BLE001
+            yield sse({"type": "result", "ok": 0, "total": 0, "reason": str(e)[:200]})
+        finally:
+            s.close()
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(gen(), media_type="text/event-stream", headers=SSE_HEADERS)
+
+
 # ------------------------------------------------------------------ 浏览
 @router.get("/units")
 def list_units(db: Session = Depends(get_db)):

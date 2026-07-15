@@ -40,10 +40,22 @@ from app.db import init_db
 from contextlib import asynccontextmanager
 
 
+def _silence_vtk():
+    """VTK 输出重定向到非 GUI 窗口——simparse 解析 Fluent 等会触发 VTK 告警，
+    否则 Windows 上弹 vtkOutputWindow 抢焦点，看着像卡死。"""
+    try:
+        import vtk
+        vtk.vtkOutputWindow.SetInstance(vtk.vtkStringOutputWindow())
+        vtk.vtkObject.GlobalWarningDisplayOff()
+    except Exception:
+        pass
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()  # 启动时建评估元数据表（幂等）
     config_store.load_overrides()  # 应用解析/物理常数运行时覆盖（若有）
+    _silence_vtk()
     yield
 
 
