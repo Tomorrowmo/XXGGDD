@@ -365,12 +365,23 @@
   .iframe-mock{height:210px;background:repeating-linear-gradient(45deg,var(--surface-2),var(--surface-2) 12px,var(--surface-3) 12px,var(--surface-3) 24px);border:1px solid var(--border);border-radius:var(--r);display:flex;align-items:center;justify-content:center;color:var(--text-3);font-family:var(--mono);font-size:12px}
   .note{font-size:11.5px;color:var(--text-3);margin-top:8px;font-style:italic}
   .placeholder{border:1px dashed var(--border-strong);border-radius:var(--r);padding:20px;color:var(--text-3);background:var(--surface)}
-  .msel{display:flex;flex-wrap:wrap;gap:8px;margin-top:2px}
-  .mchip{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--text-2);background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 11px;cursor:pointer;transition:border-color .15s}
-  .mchip:hover{border-color:var(--border-strong)}
-  .mchip:has(input:checked){border-color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,var(--surface))}
-  .mchip input{accent-color:var(--accent);cursor:pointer}
-  .mchip b{color:var(--text);font-weight:600}
+  /* 可扩展多选器（搜索+分组+滚动） */
+  .msel2{border:1px solid var(--border);border-radius:10px;background:var(--surface);overflow:hidden;margin-top:2px}
+  .msbar{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--border);background:var(--surface-2)}
+  .mssearch{flex:1;max-width:280px;font-size:12.5px;background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:6px 10px;color:var(--text)}
+  .mscount{font-size:11.5px;color:var(--text-3);font-family:var(--mono)}
+  .msbody{max-height:230px;overflow-y:auto;padding:4px}
+  .msgrp.hide,.msrow.hide{display:none}
+  .msghd{display:flex;align-items:center;gap:8px;padding:6px 8px;font-size:11.5px;color:var(--text-3);text-transform:uppercase;letter-spacing:.04em;position:sticky;top:0;background:var(--surface);cursor:pointer}
+  .msghd em{font-style:normal;font-family:var(--mono)}
+  .msghd input{accent-color:var(--accent)}
+  .msrow{display:flex;align-items:center;gap:9px;padding:6px 10px 6px 22px;font-size:12.5px;color:var(--text-2);cursor:pointer;border-radius:7px}
+  .msrow:hover{background:var(--surface-2)}
+  .msrow:has(input:checked){background:color-mix(in srgb,var(--accent) 8%,transparent)}
+  .msrow input{accent-color:var(--accent);cursor:pointer}
+  .msrow .nm{color:var(--text);font-weight:600}
+  .msrow .u{color:var(--text-3)}
+  .msrow .s{color:var(--text-3);font-size:11px;margin-left:auto;font-family:var(--mono)}
   .ing-step{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:5px 2px;color:var(--text-2)}
   .ing-step b{color:var(--text);font-weight:600;min-width:120px}
   .ing-step .ing-ic{width:16px;display:inline-flex;justify-content:center}
@@ -1944,8 +1955,8 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
     var exps=cases.filter(function(c){return c.kind==='experiment';});
     if(!exps.length){ pane.innerHTML='<div class="placeholder" style="margin:6px 0">暂无试验车次。请在「数据资源库」入库真实试验 TXT/CSV。</div>'; return; }
     function sel(cur){ var c=exps.filter(function(x){return x.id==cur;})[0]||{}; return '<div class="toolbar"><span class="chip">车次：<select id="exp-sel" class="model-pick" style="font-size:12.5px">'+exps.map(function(x){return '<option value="'+x.id+'"'+(x.id==cur?' selected':'')+'>'+x.name+' · '+x.unit+'</option>';}).join('')+'</select></span><span class="chip">工况 <b>'+(c.operating_point||'—')+'</b></span></div>'; }
-    async function load(cid){
-      var d=await getJSON(API+'/cases/'+cid+'/experiment'); var html=sel(cid);
+    async function load(cid, pre){
+      var d=pre||await getJSON(API+'/cases/'+cid+'/experiment'); var html=sel(cid);
       if(!d||!d.available){ pane.innerHTML=html+'<div class="placeholder" style="margin-top:12px">'+((d&&d.reason)||'无数据')+'</div>'; bind(); return; }
       html+='<div class="stat-row"><div class="stat"><div class="k">通道</div><div class="v">'+d.n_channels+'</div></div><div class="stat"><div class="k">行数</div><div class="v">'+d.n_rows.toLocaleString()+'</div></div><div class="stat"><div class="k">稳态段</div><div class="v">'+((d.phases.steady[1]-d.phases.steady[0])).toFixed(1)+'<small>s</small></div></div><div class="stat"><div class="k">异常</div><div class="v" style="color:'+(d.anomalies.length?'var(--warn)':'var(--good)')+'">'+d.anomalies.length+'</div></div></div>';
       html+='<div class="sect-label">时序曲线（真实数据）</div><div class="chartbox">'+lineChart(d.curves,480,200)+'</div>';
@@ -1957,7 +1968,11 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
     function bind(){ var s=document.getElementById('exp-sel'); if(s) s.addEventListener('change', function(){ load(s.value); }); }
     // 供资源库抽屉"进入完整分析"跳转到指定车次
     window.expGoto=function(cid){ if(exps.some(function(x){return x.id==cid;})) load(cid); };
-    load(exps[0].id);
+    // 默认选第一个有真实数据的车次（种子占位无文件 → 跳过），复用探测到的数据
+    (async function(){
+      for(var i=0;i<exps.length;i++){ var pb=await getJSON(API+'/cases/'+exps[i].id+'/experiment'); if(pb&&pb.available){ load(exps[i].id, pb); return; } }
+      load(exps[0].id);
+    })();
   }
 
   // ---- 仿真分析·单算例：真实数据 ----
@@ -2133,14 +2148,34 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
     var best=[]; Object.keys(g).forEach(function(op){ if(g[op].length>best.length) best=g[op]; });
     return best.length>=2?best:list.map(function(c){return c.id;});
   }
+  // 可扩展多选：搜索 + 按工况分组 + 可滚动 + 组内全选 + 计数（算例多也不乱）
   function selBox(list, picked, prefix){
-    return '<div class="msel">'+list.map(function(c){
-      var on=picked.indexOf(c.id)>=0?' checked':'';
-      var sub=c.kind==='simulation'
-        ? (c.context&&c.context.mesh_cells?(fmtCells(c.context.mesh_cells)+' · y+'+(c.context.y_plus||'—')):(c.source_format||''))
-        : ((c.context&&c.context.channels?c.context.channels+'通道':'')+' · 工况 '+(c.operating_point||'—'));
-      return '<label class="mchip"><input type="checkbox" class="'+prefix+'-ck" value="'+c.id+'"'+on+'><b>'+c.name+'</b> <span style="color:var(--text-3)">'+c.unit+'</span> <span style="color:var(--text-3);font-size:11px">'+sub+'</span></label>';
-    }).join('')+'</div>';
+    var groups={}; list.forEach(function(c){ var op=(c.operating_point&&c.operating_point!=='__UNALIGNED__')?c.operating_point:'（未对齐）'; (groups[op]=groups[op]||[]).push(c); });
+    var ops=Object.keys(groups).sort();
+    function sub(c){ return c.kind==='simulation'
+      ? (c.context&&c.context.mesh_cells?(fmtCells(c.context.mesh_cells)+' · y+'+(c.context.y_plus||'—')):(c.source_format||''))
+      : ((c.context&&c.context.channels?c.context.channels+' 通道':'')); }
+    var body=ops.map(function(op){
+      var rows=groups[op].map(function(c){ var on=picked.indexOf(c.id)>=0?' checked':'';
+        return '<label class="msrow" data-q="'+(c.name+' '+c.unit).toLowerCase()+'"><input type="checkbox" class="'+prefix+'-ck" value="'+c.id+'"'+on+'><span class="nm">'+c.name+'</span><span class="u">'+c.unit+'</span><span class="s">'+sub(c)+'</span></label>';
+      }).join('');
+      return '<div class="msgrp"><label class="msghd"><input type="checkbox" class="msgck"><span>工况 '+op+'</span><em>'+groups[op].length+'</em></label>'+rows+'</div>';
+    }).join('');
+    return '<div class="msel2" data-prefix="'+prefix+'"><div class="msbar"><input class="mssearch" placeholder="🔍 搜索算例 / 单位"><span class="spacer"></span><span class="mscount"></span><button type="button" class="chip msall">全选</button><button type="button" class="chip msnone">清空</button></div><div class="msbody">'+body+'</div></div>';
+  }
+  function bindMsel(root, prefix){
+    var box=(root||document).querySelector('.msel2[data-prefix="'+prefix+'"]'); if(!box) return;
+    function allck(){ return Array.prototype.slice.call(box.querySelectorAll('.'+prefix+'-ck')); }
+    function vis(ck){ return !ck.closest('.msrow').classList.contains('hide'); }
+    function upd(){ var n=box.querySelectorAll('.'+prefix+'-ck:checked').length; box.querySelector('.mscount').textContent='已选 '+n+' / '+allck().length;
+      box.querySelectorAll('.msgrp').forEach(function(g){ var cks=g.querySelectorAll('.'+prefix+'-ck'), c=g.querySelectorAll('.'+prefix+'-ck:checked').length, gck=g.querySelector('.msgck'); gck.checked=c===cks.length&&c>0; gck.indeterminate=c>0&&c<cks.length; }); }
+    box.addEventListener('change', function(e){ if(e.target.classList.contains('msgck')){ e.target.closest('.msgrp').querySelectorAll('.'+prefix+'-ck').forEach(function(ck){ if(vis(ck)) ck.checked=e.target.checked; }); } upd(); });
+    box.querySelector('.msall').addEventListener('click', function(){ allck().forEach(function(ck){ if(vis(ck)) ck.checked=true; }); upd(); });
+    box.querySelector('.msnone').addEventListener('click', function(){ allck().forEach(function(ck){ ck.checked=false; }); upd(); });
+    box.querySelector('.mssearch').addEventListener('input', function(){ var q=this.value.trim().toLowerCase();
+      box.querySelectorAll('.msrow').forEach(function(r){ r.classList.toggle('hide', !!q && r.getAttribute('data-q').indexOf(q)<0); });
+      box.querySelectorAll('.msgrp').forEach(function(g){ g.classList.toggle('hide', g.querySelectorAll('.msrow:not(.hide)').length===0); }); });
+    upd();
   }
   function pickedIds(prefix){
     return Array.prototype.slice.call(document.querySelectorAll('.'+prefix+'-ck:checked')).map(function(x){return +x.value;});
@@ -2157,6 +2192,7 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
     pane.innerHTML=banner+
       '<div class="toolbar" style="margin-top:10px"><span class="chip">选择参与自比的算例版本（≥2）</span><div class="spacer"></div><button class="btn primary sm" id="simx-run">对比 →</button></div>'+
       selBox(sims,picked,'simx')+'<div id="simx-out" style="margin-top:12px"></div>';
+    bindMsel(pane,'simx');
     async function run(){
       var ids=pickedIds('simx'); var out=document.getElementById('simx-out');
       if(ids.length<2){ out.innerHTML='<div class="placeholder">请至少勾选 2 个算例。</div>'; return; }
@@ -2193,6 +2229,7 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
     var picked=defaultPick(exps);
     pane.innerHTML='<div class="toolbar"><span class="chip">选择同工况重复车次（≥2）</span><div class="spacer"></div><button class="btn primary sm" id="expx-run">核查 →</button></div>'+
       selBox(exps,picked,'expx')+'<div id="expx-out" style="margin-top:12px"></div>';
+    bindMsel(pane,'expx');
     async function run(){
       var ids=pickedIds('expx'); var out=document.getElementById('expx-out');
       if(ids.length<2){ out.innerHTML='<div class="placeholder">请至少勾选 2 个车次。</div>'; return; }
