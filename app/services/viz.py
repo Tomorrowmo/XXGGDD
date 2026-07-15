@@ -15,9 +15,15 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 from app.settings import settings
+
+# 后台渲染登记：key(preview 目录名) -> True 表示正在渲染。避免同一算例并发重复渲染
+# （入库切片 + 打开面板 + 前端轮询会多次触发），也让 HTTP 请求不被阻塞在渲染上。
+_render_lock = threading.Lock()
+_rendering: dict[str, bool] = {}
 
 
 def _render_source(case_path: str | Path) -> str:
@@ -105,6 +111,90 @@ def cached_previews(case_path: str | Path) -> dict:
     out = preview_dir(case_path)
     images = {n: f"{n}.png" for n in SLICE_NAMES if (out / f"{n}.png").exists()}
     return {"available": bool(images), "dir": str(out), "images": images}
+
+
+def previews_status(case_path: str | Path) -> dict:
+    """只读状态：已缓存图 / 后台渲染中 / 未开始。**不触发**渲染，供轮询与面板秒开。"""
+    out = preview_dir(case_path)
+    key = out.name
+    images = {n: f"{n}.png" for n in SLICE_NAMES if (out / f"{n}.png").exists()}
+    if images:
+        return {"available": True, "rendering": False, "dir": str(out), "images": images,
+                "urls": {n: f"/previews/{key}/{fn}" for n, fn in images.items()}}
+    with _render_lock:
+        busy = _rendering.get(key, False)
+    return {"available": False, "rendering": busy, "dir": str(out), "images": {}}
+
+
+def start_previews(case_path: str | Path, scalar: str = "T", *, timeout: int = 600) -> dict:
+    """**非阻塞**触发切片渲染：已缓存→直接返回；正在渲染→返回 rendering；否则起后台线程渲染。
+
+    HTTP 请求（面板/轮询/入库）都用它，避免被 70s+ 渲染阻塞。幂等：同一算例并发只渲一次。
+    """
+    st = previews_status(case_path)
+    if st["available"] or st["rendering"]:
+        return st
+    if not _env_ready(case_path):
+        return {"available": False, "rendering": False,
+                "reason": "该格式需 Romtek 渲染环境（PostProcessTool + SimGraph2），当前不可用"}
+    key = preview_dir(case_path).name
+    with _render_lock:
+        if _rendering.get(key):
+            return {"available": False, "rendering": True}
+        _rendering[key] = True
+
+    def _work():
+        try:
+            generate_previews(case_path, scalar, timeout=timeout)
+        finally:
+            with _render_lock:
+                _rendering.pop(key, None)
+
+    threading.Thread(target=_work, name=f"render-{key}", daemon=True).start()
+    return {"available": False, "rendering": True}
+
+
+def vtp_status(case_path: str | Path) -> dict:
+    """只读 VTP 状态（不渲染）：已缓存→给 url/标量；后台渲染中→rendering；否则未开始。"""
+    out = preview_dir(case_path)
+    key = out.name
+    if (out / "surface.vtp").exists() and (out / "meta.json").exists():
+        try:
+            meta = json.loads((out / "meta.json").read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            meta = {}
+        return {"available": True, "rendering": False,
+                "vtp_url": f"/previews/{key}/surface.vtp",
+                "meta_url": f"/previews/{key}/meta.json",
+                "scalars": [s.get("name") for s in meta.get("scalars", [])],
+                "n_points": meta.get("n_points"), "n_cells": meta.get("n_cells")}
+    with _render_lock:
+        busy = _rendering.get("vtp:" + key, False)
+    return {"available": False, "rendering": busy}
+
+
+def start_vtp(case_path: str | Path, *, timeout: int = 600) -> dict:
+    """**非阻塞**触发 VTP 导出：已缓存/渲染中→立即返回状态；否则起后台线程。前端轮询 /vtp。"""
+    st = vtp_status(case_path)
+    if st["available"] or st["rendering"]:
+        return st
+    if not _env_ready(case_path):
+        return {"available": False, "rendering": False, "reason": "该格式需 Romtek 渲染环境"}
+    key = "vtp:" + preview_dir(case_path).name
+    with _render_lock:
+        if _rendering.get(key):
+            return {"available": False, "rendering": True}
+        _rendering[key] = True
+
+    def _work():
+        try:
+            generate_vtp(case_path, timeout=timeout)
+        finally:
+            with _render_lock:
+                _rendering.pop(key, None)
+
+    threading.Thread(target=_work, name=key, daemon=True).start()
+    return {"available": False, "rendering": True}
 
 
 def generate_vtp(case_path: str | Path, *, timeout: int = 240) -> dict:

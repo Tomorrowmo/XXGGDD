@@ -174,12 +174,8 @@ def case_previews(case_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "算例不存在")
     if c.kind != CaseKind.SIMULATION:
         return {"available": False, "reason": "仅仿真算例有切片快照"}
-    res = viz.generate_previews(c.storage_uri)
-    # 把绝对目录转成 /previews 静态 URL 供前端加载
-    if res.get("available") and res.get("dir"):
-        key = Path(res["dir"]).name
-        res["urls"] = {name: f"/previews/{key}/{fn}" for name, fn in res.get("images", {}).items()}
-    return res
+    # 非阻塞：已缓存直接给 urls；否则后台渲染 + 返回 rendering，供前端轮询（不卡请求）。
+    return viz.start_previews(c.storage_uri)
 
 
 # ------------------------------------------------------------------ PENDING 人工对齐

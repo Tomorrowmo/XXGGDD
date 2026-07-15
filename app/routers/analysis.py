@@ -227,11 +227,9 @@ def simulation_detail(case_id: int, db: Session = Depends(get_db)):
     conv = simparse_adapter.convergence(uri).get("convergence", [])
     qoi_items = simparse_adapter.qoi(uri).get("qoi", [])
     fields = simparse_adapter.field_stats(uri).get("field_stats", {})
-    previews = viz.generate_previews(uri)
-    urls = {}
-    if previews.get("available"):
-        key = Path(previews["dir"]).name
-        urls = {n: f"/previews/{key}/{fn}" for n, fn in previews.get("images", {}).items()}
+    # 切片**不阻塞**面板加载：只取已缓存图，同时后台起渲染（首次约 1 分钟，前端轮询 /previews）。
+    previews = viz.start_previews(uri)
+    urls = previews.get("urls", {})
     overview = _sim_overview(s)
     mesh = _sim_mesh(s)
     bc = s.get("bc") if isinstance(s.get("bc"), dict) else None
@@ -242,6 +240,7 @@ def simulation_detail(case_id: int, db: Session = Depends(get_db)):
             "convergence": conv, "qoi": qoi_items,
             "expert": _sim_expert(overview, conv, qoi_items, mesh),
             "preview_urls": urls,
+            "previews_rendering": bool(previews.get("rendering")),
             "x_slice_available": sim_analysis._is_openfoam(uri)}
 
 
@@ -255,7 +254,7 @@ def vtp_export(case_id: int, db: Session = Depends(get_db)):
         raise HTTPException(400, "非仿真算例")
     if not Path(c.storage_uri).exists():
         return {"available": False, "reason": "原始文件不可用（种子/演示数据无文件）"}
-    return viz.generate_vtp(c.storage_uri)
+    return viz.start_vtp(c.storage_uri)   # 非阻塞：后台渲染 + 前端轮询，不卡 3D 面板
 
 
 @router.get("/{case_id}/turntable")

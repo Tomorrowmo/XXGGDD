@@ -246,11 +246,13 @@ def ingest_steps(db: Session, path: str | Path, *, unit_name: str,
     yield step("write", "ok", f"写入 {n_meas} 条测量")
 
     if with_slices and kind == CaseKind.SIMULATION:
-        yield step("slice", "run", "生成多方向切片")
+        yield step("slice", "run", "切片渲染")
         try:
-            pv = viz.generate_previews(str(path))
+            pv = viz.start_previews(str(path))   # 非阻塞：后台渲染，不卡入库
             if pv.get("available"):
-                yield step("slice", "ok", f"{len(pv.get('images', {}))} 图 · {pv.get('engine', '')}")
+                yield step("slice", "ok", f"{len(pv.get('images', {}))} 图（已缓存）")
+            elif pv.get("rendering"):
+                yield step("slice", "ok", "后台渲染中（打开该算例即可见，首次约 1 分钟）")
             else:
                 yield step("slice", "skip", pv.get("reason", "该格式暂不支持渲染"))
         except Exception as e:  # noqa: BLE001
