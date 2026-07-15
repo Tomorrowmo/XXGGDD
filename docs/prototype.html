@@ -260,6 +260,7 @@
   .aitem .st{margin-left:auto;width:7px;height:7px;border-radius:50%}
   .aitem .st.ok{background:var(--good)} .aitem .st.warn{background:var(--warn)}
   .apane{display:none} .apane.on{display:block}
+  .apane2{display:none} .apane2.on{display:block}
   .alist .glabel{font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.05em;font-weight:600;padding:9px 11px 4px}
   .alist .glabel:first-child{padding-top:0}
   .relbanner{display:flex;gap:12px;align-items:flex-start;background:var(--accent-bg);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:var(--r);padding:12px 15px;margin-bottom:16px;font-size:12.5px;color:var(--text-2);line-height:1.6}
@@ -1936,23 +1937,99 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
   }
 
   // ---- 仿真分析·单算例：真实数据 ----
+  // 数值格式化
+  function nf(v,dp){ if(v===null||v===undefined||v==='') return '—'; if(typeof v!=='number') return v; var a=Math.abs(v); if(a!==0&&(a<1e-3||a>=1e5)) return v.toExponential(2); return (Math.round(v*Math.pow(10,dp||3))/Math.pow(10,dp||3)).toString(); }
+  function boolBadge(v){ return v===true?'<span class="badge b-good">是</span>':(v===false?'<span class="badge b-low">否</span>':'—'); }
+  function kvTable(rows){ return '<div class="tblwrap" style="border:0"><table style="min-width:auto"><tbody>'+rows.filter(function(r){return r[1]!=null&&r[1]!=='';}).map(function(r){return '<tr><td class="qty">'+r[0]+'</td><td>'+r[1]+'</td></tr>';}).join('')+'</tbody></table></div>'; }
+
   async function liveSim(){
     var pane=document.querySelector('[data-subpane="sim-single"]'); if(!pane) return;
     var cases=((await getJSON(API+'/cases'))||{}).cases; if(cases===null) return;
     var sims=cases.filter(function(c){return c.kind==='simulation';});
     if(!sims.length){ pane.innerHTML='<div class="placeholder" style="margin:6px 0">暂无仿真算例。请入库 OpenFOAM 目录 / Fluent HDF5。</div>'; return; }
-    function sel(cur){ var c=sims.filter(function(x){return x.id==cur;})[0]||{}; return '<div class="toolbar"><span class="chip">算例：<select id="sim-sel" class="model-pick" style="font-size:12.5px">'+sims.map(function(x){return '<option value="'+x.id+'"'+(x.id==cur?' selected':'')+'>'+x.name+' · '+x.unit+'</option>';}).join('')+'</select></span><span class="chip">工况 <b>'+(c.operating_point||'—')+'</b></span></div>'; }
-    async function load(cid){
-      var d=await getJSON(API+'/cases/'+cid+'/simulation'); var html=sel(cid);
-      if(!d||!d.available){ pane.innerHTML=html+'<div class="placeholder" style="margin-top:12px">'+((d&&d.reason)||'无数据')+'</div>'; bind(); return; }
-      if(d.preview_urls&&Object.keys(d.preview_urls).length){ html+='<div class="sect-label">多方向切片（真实渲染）</div><div class="slices">'+Object.keys(d.preview_urls).map(function(k){return '<div class="slice"><img src="'+d.preview_urls[k]+'" style="width:100%;height:86px;object-fit:cover;display:block"><div class="cap">'+k+'</div></div>';}).join('')+'</div>'; }
+    var NAV=[['a-overview','📋','概况'],['a-raw','🗃️','原始数据 / 变量'],['a-cloud','🧊','三维可视化'],['a-slice','📈','沿程面平均'],['a-inlet','🚪','入口参数'],['a-wall','💪','壁面力'],['a-vlm','👁️','VLM 云图分析'],['a-conv','📉','收敛 / 残差'],['a-mesh','🕸️','网格质量'],['a-qoi','🎯','QOI 摘要'],['a-expert','🧠','专家结论（渊）']];
+    function sel(cur){ var c=sims.filter(function(x){return x.id==cur;})[0]||{}; return '<div class="toolbar"><span class="chip">算例：<select id="sim-sel" class="model-pick" style="font-size:12.5px">'+sims.map(function(x){return '<option value="'+x.id+'"'+(x.id==cur?' selected':'')+'>'+x.name+' · '+x.unit+'</option>';}).join('')+'</select></span><span class="chip">工况 <b>'+(c.operating_point||'—')+'</b></span><span class="badge '+confCls(c.parse_confidence)+'" style="padding:5px 9px"><span class="d"></span>解析 '+c.parse_confidence+'</span></div>'; }
+
+    async function load(cid, pre){
+      var d=pre||await getJSON(API+'/cases/'+cid+'/simulation');
+      if(!d||!d.available){ pane.innerHTML=sel(cid)+'<div class="placeholder" style="margin-top:12px">'+((d&&d.reason)||'无数据')+'</div>'; bindSel(); return; }
+      var ov=d.overview||{}, mesh=d.mesh||{}, ex=d.expert||{};
       var convHit=(d.convergence||[]).filter(function(x){return x.value!==null&&x.value!==undefined;});
-      html+='<div class="sect-label">收敛判据（simparse × sim-knowledge）</div><div class="tblwrap"><table><thead><tr><th>判据量</th><th class="num">值</th><th>置信</th></tr></thead><tbody>'+convHit.slice(0,8).map(function(x){return '<tr><td class="qty">'+x.variable+'</td><td class="num">'+(typeof x.value==='number'?Math.round(x.value*1000)/1000:x.value)+'</td><td><span class="badge '+confCls(x.confidence)+'"><span class="d"></span>'+(x.confidence||'')+'</span></td></tr>';}).join('')+'</tbody></table></div>';
-      html+='<div class="sect-label">QOI（真实解析 · 前 14）</div><div class="tblwrap"><table><thead><tr><th>物理量</th><th class="num">值</th><th class="num">单位</th><th>置信</th></tr></thead><tbody>'+(d.qoi||[]).slice(0,14).map(function(q){return '<tr><td class="qty">'+q.variable+'</td><td class="num">'+(typeof q.value==='number'?Math.round(q.value*1000)/1000:q.value)+'</td><td class="num">'+(q.unit||'')+'</td><td><span class="badge '+confCls(q.confidence)+'"><span class="d"></span>'+(q.confidence||'')+'</span></td></tr>';}).join('')+'</tbody></table></div>';
-      pane.innerHTML=html; bind();
+      var qoiVals=(d.qoi||[]).filter(function(x){return typeof x.value==='number';});
+      // 顶部 stat 概览
+      var conv=convHit.filter(function(x){return x.variable==='is_steady_state_converged';})[0];
+      var stat='<div class="stat-row">'+
+        '<div class="stat"><div class="k">格式</div><div class="v" style="font-size:14px">'+(ov.format||d.summary&&d.summary.format||'—')+'</div></div>'+
+        '<div class="stat"><div class="k">网格</div><div class="v">'+fmtCells(mesh.cells)+'</div></div>'+
+        '<div class="stat"><div class="k">收敛</div><div class="v" style="font-size:15px;color:'+(conv&&conv.value?'var(--good)':'var(--warn)')+'">'+(conv?(conv.value?'✓ 已收敛':'未收敛'):'—')+'</div></div>'+
+        '<div class="stat"><div class="k">边界</div><div class="v">'+(mesh.n_boundaries||'—')+'</div></div>'+
+        '<div class="stat"><div class="k">QOI</div><div class="v">'+qoiVals.length+'</div></div></div>';
+      // 各面板内容
+      var P={};
+      P['a-overview']='<div class="card card-pad"><h3>算例概况 <span class="badge b-med" style="margin-left:auto"><span class="d"></span>simparse</span></h3>'+kvTable([
+        ['求解器',ov.solver],['格式 / 版本',(ov.format||'')+(ov.version?(' · '+ov.version):'')],['湍流模型',(ov.turbulence||'')+(ov.sim_type?(' ('+ov.sim_type+')'):'')],
+        ['热物性',(ov.thermo_type||'')+(ov.transport?(' · '+ov.transport):'')],['燃烧模型',ov.combustion],['化学机理',ov.chemistry],
+        ['瞬态',boolBadge(ov.transient)],['分区数',ov.decomposition],['重力',ov.gravity?('['+ov.gravity.map(function(g){return nf(g,2);}).join(', ')+']'):null]])+'</div>';
+      P['a-raw']='<div class="card card-pad"><h3>变量场统计 <span class="badge b-med" style="margin-left:auto"><span class="d"></span>simparse field_stats</span></h3><p class="muted" style="margin:3px 0 10px">全场 '+(d.variables||[]).length+' 个非零变量的量程（min/max/mean）。</p><div class="tblwrap"><table><thead><tr><th>变量</th><th class="num">min</th><th class="num">max</th><th class="num">mean</th></tr></thead><tbody>'+(d.variables||[]).slice(0,40).map(function(v){return '<tr><td class="qty">'+v.name+'</td><td class="num">'+nf(v.min)+'</td><td class="num">'+nf(v.max)+'</td><td class="num">'+nf(v.mean)+'</td></tr>';}).join('')+'</tbody></table></div></div>';
+      // 三维 / 切片
+      var slc=''; if(d.preview_urls&&Object.keys(d.preview_urls).length){ slc='<div class="slices">'+Object.keys(d.preview_urls).map(function(k){return '<div class="slice"><img src="'+d.preview_urls[k]+'" style="width:100%;height:96px;object-fit:cover;display:block"><div class="cap">'+k+'</div></div>';}).join('')+'</div>'; } else { slc='<div class="note">切片未生成（可在资源库入库时自动出图）</div>'; }
+      P['a-cloud']='<div class="card card-pad"><h3>三维可视化 · 多方向切片 <span class="badge b-med" style="margin-left:auto"><span class="d"></span>VTK 真实渲染</span></h3>'+slc+'</div>';
+      P['a-slice']='<div class="card card-pad"><h3>沿程面平均 <span class="badge b-med" style="margin-left:auto"><span class="d"></span>formulas 公式库</span></h3><div class="toolbar" style="margin:6px 0 10px"><span class="chip">Y轴：<select id="xs-field" class="model-pick" style="font-size:12px"><option value="P_static">静压</option><option value="T_static">静温</option><option value="Mach">马赫数</option><option value="T0">总温</option><option value="P0">总压</option></select></span><span class="chip">切片数 100</span><span id="xs-note" style="font-size:11.5px;color:var(--text-3);align-self:center"></span></div><div id="xs-chart"><p class="muted">加载中…</p></div></div>';
+      // 入口参数（bc 真实）
+      var bc=d.bc||{}; var inletRows='';
+      if(bc.T_inlet_per_patch){ inletRows=Object.keys(bc.T_inlet_per_patch).map(function(p){var uu=(bc.U_inlet_per_patch&&bc.U_inlet_per_patch[p]); return '<tr><td class="qty">'+p+'</td><td class="num">'+nf(bc.T_inlet_per_patch[p])+'</td><td class="num">'+(uu!=null?nf(uu):(bc.U_inlet!=null?nf(bc.U_inlet):'—'))+'</td></tr>';}).join(''); }
+      P['a-inlet']='<div class="card card-pad"><h3>入口边界参数 <span class="badge b-med" style="margin-left:auto"><span class="d"></span>解析边界条件</span></h3>'+(inletRows?('<div class="tblwrap"><table><thead><tr><th>入口 patch</th><th class="num">总温/静温 K</th><th class="num">速度 m/s</th></tr></thead><tbody>'+inletRows+'</tbody></table></div>'):('<div class="note">'+(bc.T_inlet!=null?('来流温度 <b>'+nf(bc.T_inlet)+' K</b> · 速度 <b>'+nf(bc.U_inlet)+' m/s</b>'):'未解析到入口边界条件')+'</div>'))+'<p class="note">Fluent 算例可用 <span class="cite">inlet_conditions</span> 做面邻接单元均值 + 质量流量（ṁ=-Σφ）。</p></div>';
+      // 壁面力
+      var walls=(mesh.boundaries||[]).filter(function(b){return (b.type||'').indexOf('wall')>=0||(b.name||'').toLowerCase().indexOf('wall')>=0;});
+      P['a-wall']='<div class="card card-pad"><h3>壁面力积分 <span class="badge b-pending" style="margin-left:auto"><span class="d"></span>公式已备</span></h3><p class="muted" style="margin:3px 0 10px">壁面力 F=Σp(-n)A+Στ（<span class="cite">formulas.forces</span> 已实现）。需 Fluent .cas.h5 场（SV_P/SV_WALL_SHEAR）或 OpenFOAM 面场接入后给出三分量合力。当前列出壁面 patch：</p><div class="tblwrap"><table><thead><tr><th>壁面 patch</th><th>类型</th><th class="num">面数</th></tr></thead><tbody>'+(walls.length?walls.map(function(b){return '<tr><td class="qty">'+b.name+'</td><td>'+b.type+'</td><td class="num">'+(b.n_faces||'—')+'</td></tr>';}).join(''):'<tr><td colspan="3" class="muted">无 wall 类型 patch</td></tr>')+'</tbody></table></div></div>';
+      P['a-vlm']='<div class="card card-pad"><h3>VLM 云图分析 <span class="badge b-pending" style="margin-left:auto"><span class="d"></span>需多模态模型</span></h3><div class="note">对切片云图做视觉语言分析需配置多模态模型（models.json multimodal）。未配置时此处不臆造结论。</div></div>';
+      // 收敛/残差
+      var res=d.residuals||{}; var orders=res.orders||{}; var csum=res.summary||{};
+      var rcurves=Object.keys(res.series||{}).slice(0,6).map(function(v){var ys=res.series[v]; return {label:v,x:ys.map(function(_,i){return i;}),y:ys.map(function(y){return (y==null?0:(y>0?Math.log10(y):-12));})};});
+      var critRows=convHit.map(function(x){var val=(typeof x.value==='boolean')?boolBadge(x.value):nf(x.value); var ref=(x.reference&&x.reference.length)?('<span class="cite" title="'+(x.reference.join(' · ')).replace(/"/g,'')+'">'+x.reference[0]+'…</span>'):''; return '<tr><td class="qty">'+x.variable+'</td><td class="num">'+val+'</td><td class="muted" style="color:var(--text-2)">'+(x.description||'')+'</td><td>'+ref+'</td></tr>';}).join('');
+      P['a-conv']='<div class="card card-pad"><h3>收敛 / 残差 <span class="badge '+(csum.n_diverged?'b-warn':'b-good')+'" style="margin-left:auto"><span class="d"></span>'+(csum.n_converged||0)+'/'+(csum.n_total||0)+' 收敛</span></h3>'+
+        (rcurves.length?'<div class="chartbox" style="margin-bottom:10px"><div style="font-weight:600;font-size:13px;margin-bottom:6px">残差历史（log₁₀）</div>'+lineChart(rcurves,480,180)+'</div>':'')+
+        '<div class="sect-label">各变量残差下降阶数</div><div class="tblwrap"><table><thead><tr><th>变量</th><th class="num">下降阶数</th></tr></thead><tbody>'+Object.keys(orders).slice(0,10).map(function(v){return '<tr><td class="qty">'+v+'</td><td class="num">'+nf(orders[v],2)+'</td></tr>';}).join('')+'</tbody></table></div>'+
+        '<div class="sect-label">收敛判据（护城河 · 带文献）</div><div class="tblwrap"><table><thead><tr><th>判据</th><th class="num">值</th><th>说明</th><th>文献</th></tr></thead><tbody>'+critRows+'</tbody></table></div></div>';
+      // 网格
+      P['a-mesh']='<div class="card card-pad"><h3>网格质量 <span class="badge b-med" style="margin-left:auto"><span class="d"></span>simparse</span></h3>'+kvTable([['单元数',mesh.cells!=null?mesh.cells.toLocaleString():null],['节点数',mesh.points!=null?mesh.points.toLocaleString():null],['面数',mesh.faces!=null?mesh.faces.toLocaleString():null],['内部面',mesh.internal_faces!=null?mesh.internal_faces.toLocaleString():null],['边界 patch 数',mesh.n_boundaries]])+
+        '<div class="sect-label" style="margin-top:12px">边界 patch</div><div class="tblwrap"><table><thead><tr><th>名称</th><th>类型</th><th class="num">面数</th></tr></thead><tbody>'+(mesh.boundaries||[]).map(function(b){return '<tr><td class="qty">'+b.name+'</td><td>'+b.type+'</td><td class="num">'+(b.n_faces||'—')+'</td></tr>';}).join('')+'</tbody></table></div></div>';
+      // QOI
+      P['a-qoi']='<div class="card card-pad"><h3>QOI 摘要 <span class="badge b-med" style="margin-left:auto"><span class="d"></span>'+qoiVals.length+' 项</span></h3><div class="tblwrap"><table><thead><tr><th>物理量</th><th class="num">值</th><th class="num">单位</th><th>说明</th><th>置信</th></tr></thead><tbody>'+(d.qoi||[]).filter(function(q){return q.value!==null&&typeof q.value!=='boolean';}).slice(0,30).map(function(q){return '<tr><td class="qty">'+q.variable+'</td><td class="num">'+nf(q.value)+'</td><td class="num">'+(q.unit==='1'?'':(q.unit||''))+'</td><td class="muted" style="color:var(--text-2);max-width:220px">'+(q.description||'')+'</td><td><span class="badge '+confCls(q.confidence)+'"><span class="d"></span>'+(q.confidence||'')+'</span></td></tr>';}).join('')+'</tbody></table></div></div>';
+      // 专家
+      var es=ex.sections||{};
+      P['a-expert']='<div class="diag" style="margin-top:0"><div class="hd"><span class="yuan">渊</span>专家结论 · 五段式 <span class="badge b-'+((ex.verdict_class==='good')?'high':'med')+'" style="margin-left:auto"><span class="d"></span>'+(ex.verdict||'')+'</span></div>'+['概况','网格','收敛','QOI','结论'].map(function(k){return '<p'+(k==='结论'?' style="margin:0"':'')+'><b style="color:var(--text)">'+k+'</b>：'+(es[k]||'—')+'</p>';}).join('')+'</div>';
+
+      // 组装：nav + panes
+      var navHtml=NAV.map(function(n,i){return '<div class="aitem'+(i===0?' on':'')+'" data-ap="'+n[0]+'"><span class="ai">'+n[1]+'</span>'+n[2]+'</div>';}).join('');
+      var panesHtml=NAV.map(function(n,i){return '<div class="apane2'+(i===0?' on':'')+'" data-ap="'+n[0]+'">'+(P[n[0]]||'')+'</div>';}).join('');
+      pane.innerHTML=sel(cid)+stat+'<div class="grid cols-sim" style="align-items:start"><div class="card card-pad"><div class="alist">'+navHtml+'</div></div><div>'+panesHtml+'</div></div>';
+      bindSel();
+      // nav 切换 + 沿程面平均懒加载
+      var xsLoaded=false;
+      pane.querySelector('.alist').addEventListener('click', function(e){ var it=e.target.closest('.aitem'); if(!it) return;
+        pane.querySelectorAll('.alist .aitem').forEach(function(x){x.classList.toggle('on',x===it);});
+        pane.querySelectorAll('.apane2').forEach(function(p){p.classList.toggle('on',p.dataset.ap===it.dataset.ap);});
+        if(it.dataset.ap==='a-slice'&&!xsLoaded){ xsLoaded=true; loadXslice(cid); }
+      });
     }
-    function bind(){ var s=document.getElementById('sim-sel'); if(s) s.addEventListener('change', function(){ load(s.value); }); }
-    load(sims[0].id);
+    async function loadXslice(cid){
+      var box=document.getElementById('xs-chart'), note=document.getElementById('xs-note'); if(!box) return;
+      var d=await getJSON(API+'/cases/'+cid+'/x-slice?n_slices=100');
+      if(!d||!d.available){ box.innerHTML='<div class="placeholder">'+((d&&d.reason)||'无法计算')+'</div>'; return; }
+      window.__xs=d; if(note) note.textContent='共 '+d.n_slices+' 层 · 单位 mm';
+      function draw(){ var f=(document.getElementById('xs-field')||{}).value||'P_static'; var ys=d.fields[f]||[];
+        var curve=[{label:f,x:d.x_mm,y:ys.map(function(v){return v==null?0:v;})}];
+        box.innerHTML='<div class="chartbox">'+lineChart(curve,480,220)+'</div>'; }
+      var selF=document.getElementById('xs-field'); if(selF) selF.addEventListener('change',draw);
+      draw();
+    }
+    function bindSel(){ var s=document.getElementById('sim-sel'); if(s) s.addEventListener('change', function(){ load(s.value); }); }
+    // 默认选第一个有真实数据的算例（种子占位无文件 → 跳过），复用探测到的数据，避免二次请求
+    (async function(){
+      for(var i=0;i<sims.length;i++){ var pb=await getJSON(API+'/cases/'+sims[i].id+'/simulation'); if(pb&&pb.available){ load(sims[i].id, pb); return; } }
+      load(sims[0].id);
+    })();
   }
 
   // ---- 多选算例/车次公共小工具 ----

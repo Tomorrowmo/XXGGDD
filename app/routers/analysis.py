@@ -17,7 +17,7 @@ from app.db.models import (
 )
 from app.services import experiment as exp_svc
 from app.services import criteria as crit_svc
-from app.services import simparse_adapter, viz
+from app.services import simparse_adapter, viz, sim_analysis
 
 router = APIRouter(prefix="/api/v2/cases", tags=["analysis"])
 
@@ -108,29 +108,152 @@ def experiment_detail(case_id: int, db: Session = Depends(get_db)):
             "curves": curves}
 
 
+def _sim_overview(s: dict) -> dict:
+    """从 simparse 概况提取专业概览字段（去 _provenance 噪声）。"""
+    def g(*ks):
+        for k in ks:
+            if k in s and s[k] is not None:
+                return s[k]
+        return None
+    turb = s.get("turbulence") or {}
+    thermo = s.get("thermophysics") or {}
+    comb = s.get("combustion") or {}
+    chem = s.get("chemistry") or {}
+    tt = thermo.get("thermoType") if isinstance(thermo, dict) else None
+    return {
+        "solver": g("solver", "application"), "format": g("format"), "version": g("version"),
+        "layout": g("layout"), "transient": s.get("is_transient"), "completed": s.get("is_completed"),
+        "turbulence": (turb.get("RASModel") or turb.get("LESModel") or turb.get("simulationType"))
+        if isinstance(turb, dict) else turb,
+        "sim_type": turb.get("simulationType") if isinstance(turb, dict) else None,
+        "transport": (tt.get("transport") if isinstance(tt, dict) else None),
+        "thermo_type": (tt.get("type") if isinstance(tt, dict) else None),
+        "combustion": comb.get("combustionModel") if isinstance(comb, dict) else comb,
+        "chemistry": (chem.get("chemistryType", {}) or {}).get("method") if isinstance(chem, dict) else None,
+        "decomposition": (s.get("decomposition") or {}).get("numberOfSubdomains") if isinstance(s.get("decomposition"), dict) else None,
+        "gravity": s.get("gravity"),
+    }
+
+
+def _sim_mesh(s: dict) -> dict:
+    bnds = s.get("boundaries") or []
+    zones = s.get("mesh_zones") or []
+    return {
+        "cells": s.get("mesh_cells"), "points": s.get("mesh_points"),
+        "faces": s.get("mesh_faces"), "internal_faces": s.get("mesh_internal_faces"),
+        "n_boundaries": len(bnds) if isinstance(bnds, list) else None,
+        "boundaries": [{"name": b.get("name"), "type": b.get("type"), "n_faces": b.get("nFaces")}
+                       for b in bnds if isinstance(b, dict)][:20] if isinstance(bnds, list) else [],
+        "zones": [{"name": z.get("name"), "role": z.get("role"), "n_cells": z.get("n_cells")}
+                  for z in zones if isinstance(z, dict)] if isinstance(zones, list) else [],
+    }
+
+
+def _sim_variables(fields: dict) -> list[dict]:
+    vr = (fields or {}).get("variable_ranges") or {}
+    out = []
+    for name, rng in vr.items():
+        if not isinstance(rng, dict):
+            continue
+        mn, mx = rng.get("min"), rng.get("max")
+        if mn is None and mx is None:
+            continue
+        # 跳过全零场（大量未参与组分），保留有量程的
+        if (mn == 0 and mx == 0):
+            continue
+        out.append({"name": name, "min": mn, "max": mx, "mean": rng.get("mean")})
+    return out
+
+
+def _sim_residuals(fields: dict) -> dict:
+    rh = (fields or {}).get("residual_history") or {}
+    co = (fields or {}).get("convergence_orders") or {}
+    cs = (fields or {}).get("convergence_summary") or {}
+    def _scalar(v):
+        # residual_history 元素可能是标量，也可能是 [iter, residual] 对
+        if isinstance(v, (list, tuple)):
+            v = v[-1] if v else None
+        try:
+            return None if v is None else round(float(v), 8)
+        except (TypeError, ValueError):
+            return None
+    series = {}
+    for var, vals in rh.items():
+        if isinstance(vals, list) and vals:
+            series[var] = [_scalar(v) for v in vals[-200:]]
+    return {"series": series, "orders": co, "summary": cs}
+
+
+def _sim_expert(overview: dict, conv: list, qoi_items: list, mesh: dict) -> dict:
+    """确定性五段式专家小结（部署机可再由 agent「渊」增强）。"""
+    def find(items, name):
+        for x in items:
+            if isinstance(x, dict) and x.get("variable") == name:
+                return x.get("value")
+        return None
+    converged = find(conv, "is_steady_state_converged")
+    diverged = find(conv, "is_diverged")
+    orders_max = find(conv, "convergence_orders_max")
+    tmax = find(qoi_items, "T_max")
+    n_qoi = len([x for x in qoi_items if isinstance(x, dict) and x.get("value") is not None])
+    conv_txt = ("已收敛" if converged else "未达稳态收敛") + (f"（残差最大降 {round(float(orders_max),1)} 阶）" if isinstance(orders_max, (int, float)) else "")
+    verdict = "数据可信" if (converged and not diverged) else ("发散/未收敛，需复核" if diverged or converged is False else "待复核")
+    vc = "good" if verdict == "数据可信" else "warn"
+    return {"sections": {
+        "概况": f"{overview.get('solver') or '—'} · {overview.get('turbulence') or '—'}"
+                + (f" · {overview.get('combustion')} 燃烧" if overview.get('combustion') else ""),
+        "网格": f"{mesh.get('cells') or '—'} 单元 · {mesh.get('n_boundaries') or '—'} 边界",
+        "收敛": conv_txt,
+        "QOI": f"提取 {n_qoi} 项关注量" + (f"，最高温 {round(float(tmax))} K" if isinstance(tmax, (int, float)) else ""),
+        "结论": verdict,
+    }, "verdict": verdict, "verdict_class": vc}
+
+
 @router.get("/{case_id}/simulation")
 def simulation_detail(case_id: int, db: Session = Depends(get_db)):
-    """仿真算例真实分析：概况/收敛/网格/QOI/切片。"""
+    """仿真算例真实分析：概况/网格/变量/收敛(残差·判据)/QOI/切片/专家（专业面板）。"""
     c = db.get(Case, case_id)
     if c is None:
         raise HTTPException(404, "算例不存在")
     if c.kind != CaseKind.SIMULATION:
         raise HTTPException(400, "非仿真算例")
     uri = c.storage_uri
+    if not Path(uri).exists():
+        return {"available": False, "reason": "原始文件不可用（种子/演示数据无文件，请入库真实算例）"}
     summ = simparse_adapter.summary(uri)
     if not summ.get("available"):
         return {"available": False, "reason": summ.get("reason", "simparse 不可用或无文件")}
-    conv = simparse_adapter.convergence(uri)
-    qoi = simparse_adapter.qoi(uri)
-    fields = simparse_adapter.field_stats(uri)
+    s = summ.get("summary", {})
+    conv = simparse_adapter.convergence(uri).get("convergence", [])
+    qoi_items = simparse_adapter.qoi(uri).get("qoi", [])
+    fields = simparse_adapter.field_stats(uri).get("field_stats", {})
     previews = viz.generate_previews(uri)
     urls = {}
     if previews.get("available"):
         key = Path(previews["dir"]).name
         urls = {n: f"/previews/{key}/{fn}" for n, fn in previews.get("images", {}).items()}
-    return {"available": True, "summary": summ.get("summary", {}),
-            "convergence": conv.get("convergence", []), "qoi": qoi.get("qoi", []),
-            "field_stats": fields.get("field_stats", {}), "preview_urls": urls}
+    overview = _sim_overview(s)
+    mesh = _sim_mesh(s)
+    bc = s.get("bc") if isinstance(s.get("bc"), dict) else None
+    return {"available": True,
+            "overview": overview, "mesh": mesh, "bc": bc,
+            "variables": _sim_variables(fields),
+            "residuals": _sim_residuals(fields),
+            "convergence": conv, "qoi": qoi_items,
+            "expert": _sim_expert(overview, conv, qoi_items, mesh),
+            "preview_urls": urls,
+            "x_slice_available": sim_analysis._is_openfoam(uri)}
+
+
+@router.get("/{case_id}/x-slice")
+def x_slice(case_id: int, n_slices: int = 100, db: Session = Depends(get_db)):
+    """沿程面平均（静压/静温/马赫/总温/总压）—— 用公式库算真实场（OpenFOAM）。"""
+    c = db.get(Case, case_id)
+    if c is None:
+        raise HTTPException(404, "算例不存在")
+    if c.kind != CaseKind.SIMULATION:
+        raise HTTPException(400, "非仿真算例")
+    return sim_analysis.x_slice_openfoam(c.storage_uri, n_slices=n_slices)
 
 
 # ------------------------------------------------------------------ 多算例 / 多车次对比
