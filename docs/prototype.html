@@ -311,6 +311,11 @@
   .phasebar .steady{background:var(--accent-bg);color:var(--accent);font-weight:700;border-left:2px solid var(--accent);border-right:2px solid var(--accent)}
   .phasebar .seg{background:var(--surface-2)}
   /* raw data viewer */
+  .expcurve{display:flex;gap:12px;align-items:stretch}
+  .chanpick{flex:none;width:190px;max-height:230px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:6px;background:var(--surface);display:flex;flex-direction:column;gap:2px}
+  .chanck{display:flex;gap:6px;align-items:center;font-size:11.5px;color:var(--text-2);padding:3px 5px;border-radius:5px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .chanck:hover{background:var(--surface-2);color:var(--text)}
+  .chanck input{accent-color:var(--accent);flex:none}
   .rawtbl{font-family:var(--mono);font-size:12px;min-width:720px}
   .rawtbl th,.rawtbl td{padding:6px 12px;font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;border-bottom:1px solid var(--border)}
   .rawtbl thead th{background:var(--bg-2);color:var(--text-2);position:sticky;top:0}
@@ -1988,11 +1993,38 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
       var d=pre||await getJSON(API+'/cases/'+cid+'/experiment'); var html=sel(cid);
       if(!d||!d.available){ pane.innerHTML=html+'<div class="placeholder" style="margin-top:12px">'+((d&&d.reason)||'无数据')+'</div>'; bind(); return; }
       html+='<div class="stat-row"><div class="stat"><div class="k">通道</div><div class="v">'+d.n_channels+'</div></div><div class="stat"><div class="k">行数</div><div class="v">'+d.n_rows.toLocaleString()+'</div></div><div class="stat"><div class="k">稳态段</div><div class="v">'+((d.phases.steady[1]-d.phases.steady[0])).toFixed(1)+'<small>s</small></div></div><div class="stat"><div class="k">异常</div><div class="v" style="color:'+(d.anomalies.length?'var(--warn)':'var(--good)')+'">'+d.anomalies.length+'</div></div></div>';
-      html+='<div class="sect-label">时序曲线（真实数据）</div><div class="chartbox">'+lineChart(d.curves,480,200)+'</div>';
+      html+='<div class="sect-label">时序曲线 · 勾选物理量切换显示</div><div class="expcurve"><div id="exp-chanpick" class="chanpick"></div><div id="exp-chart" class="chartbox" style="flex:1;min-width:0"></div></div>';
       html+='<div class="sect-label">阶段分割</div><div class="card card-pad">'+phaseBar(d.phases)+'<p class="note">关键量从主级稳态段提取。</p></div>';
-      html+='<div class="sect-label">通道统计</div><div class="tblwrap"><table><thead><tr><th>通道</th><th class="num">最小</th><th class="num">最大</th><th class="num">均值</th><th class="num">标准差</th></tr></thead><tbody>'+d.stats.slice(0,10).map(function(s){return '<tr><td class="qty">'+s.label+'</td><td class="num">'+s.min+'</td><td class="num">'+s.max+'</td><td class="num">'+s.mean+'</td><td class="num">'+s.std+'</td></tr>';}).join('')+'</tbody></table></div>';
-      html+='<div class="sect-label">稳态关键量 → 真值</div><div class="tblwrap"><table><thead><tr><th>物理量</th><th class="num">值</th><th class="num">单位</th><th>提取</th></tr></thead><tbody>'+d.steady_qoi.slice(0,10).map(function(q){return '<tr><td class="qty">'+q.quantity+'</td><td class="num">'+q.value+'</td><td class="num">'+q.unit+'</td><td class="muted" style="color:var(--text-2)">'+q.method+'</td></tr>';}).join('')+'</tbody></table></div>';
+      html+='<div class="sect-label">通道统计（全 '+d.n_channels+' 路）</div><div class="tblwrap" style="max-height:300px;overflow:auto"><table><thead><tr><th>通道</th><th class="num">最小</th><th class="num">最大</th><th class="num">均值</th><th class="num">标准差</th></tr></thead><tbody>'+d.stats.slice(0,30).map(function(s){return '<tr><td class="qty">'+s.label+'</td><td class="num">'+s.min+'</td><td class="num">'+s.max+'</td><td class="num">'+s.mean+'</td><td class="num">'+s.std+'</td></tr>';}).join('')+'</tbody></table></div>';
+      html+='<div class="sect-label">稳态关键量 → 真值</div><div class="tblwrap" style="max-height:280px;overflow:auto"><table><thead><tr><th>物理量</th><th class="num">值</th><th class="num">单位</th><th>提取</th></tr></thead><tbody>'+d.steady_qoi.slice(0,30).map(function(q){return '<tr><td class="qty">'+q.quantity+'</td><td class="num">'+q.value+'</td><td class="num">'+q.unit+'</td><td class="muted" style="color:var(--text-2)">'+q.method+'</td></tr>';}).join('')+'</tbody></table></div>';
+      html+='<div class="sect-label">原始数据 · 逐行查看</div><div id="exp-raw"><p class="muted">加载中…</p></div>';
       pane.innerHTML=html; bind();
+      setupCurve(d); setupRaw(cid, d.n_rows);
+    }
+    function _shortLbl(l){ return (l||'').replace(/\s*-\s*\([^)]*\)\s*$/,'').replace(/^通道\s*\d+\s*\/?\s*/,'').trim().slice(0,22)||l; }
+    function setupCurve(d){
+      var pick=document.getElementById('exp-chanpick'), chart=document.getElementById('exp-chart'); if(!pick||!chart) return;
+      var series=d.series||[], x=d.curve_x||[];
+      if(!series.length){ chart.innerHTML=lineChart(d.curves||[],470,210); return; }
+      pick.innerHTML=series.map(function(s,i){ return '<label class="chanck" title="'+s.label+'"><input type="checkbox" data-si="'+i+'"'+(i<4?' checked':'')+'>'+_shortLbl(s.label)+'</label>'; }).join('');
+      function draw(){ var sel=[]; pick.querySelectorAll('input:checked').forEach(function(cb){ var i=+cb.getAttribute('data-si'); if(series[i]) sel.push({label:_shortLbl(series[i].label),x:x,y:series[i].y}); });
+        chart.innerHTML = sel.length? lineChart(sel.slice(0,8),470,210) : '<p class="muted" style="padding:24px;text-align:center">勾选左侧物理量以显示曲线</p>'; }
+      pick.addEventListener('change',draw); draw();
+    }
+    function setupRaw(cid,total){
+      var box=document.getElementById('exp-raw'); if(!box) return; var off=0, lim=50;
+      async function page(){ box.innerHTML='<p class="muted">加载中…</p>';
+        var r=await getJSON(API+'/cases/'+cid+'/experiment/raw?offset='+off+'&limit='+lim);
+        if(!r||!r.available){ box.innerHTML='<p class="muted">'+((r&&r.reason)||'无原始数据')+'</p>'; return; }
+        var th='<tr>'+r.headers.map(function(h){return '<th title="'+h+'">'+_shortLbl(h)+'</th>';}).join('')+'</tr>';
+        var tb=r.rows.map(function(row){return '<tr>'+row.map(function(v){return '<td>'+v+'</td>';}).join('')+'</tr>';}).join('');
+        box.innerHTML='<div class="tblwrap" style="max-height:340px;overflow:auto"><table class="rawtbl"><thead>'+th+'</thead><tbody>'+tb+'</tbody></table></div>'
+          +'<div class="pager" style="margin-top:8px"><button id="rp-prev">‹ 上一页</button><span style="margin:0 10px;color:var(--text-2)">行 '+(off+1)+'–'+Math.min(off+lim,r.total)+' / '+r.total.toLocaleString()+'</span><button id="rp-next">下一页 ›</button></div>';
+        var pv=document.getElementById('rp-prev'), nx=document.getElementById('rp-next');
+        if(pv) pv.onclick=function(){ off=Math.max(0,off-lim); page(); };
+        if(nx) nx.onclick=function(){ if(off+lim<r.total){ off+=lim; page(); } };
+      }
+      page();
     }
     function bind(){ var s=document.getElementById('exp-sel'); if(s) s.addEventListener('change', function(){ load(s.value); }); }
     // 供资源库抽屉"进入完整分析"跳转到指定车次

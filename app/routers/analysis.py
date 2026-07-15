@@ -29,6 +29,24 @@ def _downsample(x: np.ndarray, y: np.ndarray, n: int = 400):
     return x[idx], y[idx]
 
 
+# 试验解析缓存（按 路径+mtime）：40k 行解析 ~1s，分页/切换物理量时避免每次重解析
+_EXP_CACHE: dict = {}
+
+
+def _parsed_experiment(path: str | Path):
+    p = Path(path)
+    key = str(p.resolve())
+    mt = p.stat().st_mtime
+    hit = _EXP_CACHE.get(key)
+    if hit and hit[0] == mt:
+        return hit[1]
+    pe = exp_svc.read_experiment(path)
+    _EXP_CACHE[key] = (mt, pe)
+    if len(_EXP_CACHE) > 8:                       # 简单限容
+        _EXP_CACHE.pop(next(iter(_EXP_CACHE)))
+    return pe
+
+
 def _op_key(db: Session, case: Case) -> str | None:
     link = db.execute(
         select(CaseOperatingLink).where(CaseOperatingLink.case_id == case.id)
@@ -85,7 +103,7 @@ def experiment_detail(case_id: int, db: Session = Depends(get_db)):
     if not path.exists():
         return {"available": False, "reason": "原始文件不可用（种子/演示数据无文件，请入库真实 TXT）"}
     try:
-        parsed = exp_svc.read_experiment(path)
+        parsed = _parsed_experiment(path)
     except Exception as e:  # noqa: BLE001
         return {"available": False, "reason": f"解析失败：{e}"}
     stats = exp_svc.compute_stats(parsed)
@@ -93,19 +111,52 @@ def experiment_detail(case_id: int, db: Session = Depends(get_db)):
     steady = exp_svc.extract_steady_qoi(parsed, phases)
     anomalies = [a.__dict__ for a in crit_svc.check_experiment_anomalies(stats)]
     corr = exp_svc.settings.experiment.atmos_correction_mpa
-    curves = []
-    for ch in parsed.channels[:6]:
+    _press = ("流道压力", "室压", "隔离段")
+    # 共享 x 的**全通道**下采样序列，供前端自由切换要显示的物理量（无需重新请求）
+    xs_ds, _ = _downsample(parsed.time, parsed.time)
+    curve_x = [round(float(v), 4) for v in xs_ds]
+    series = []
+    for ch in parsed.channels:
         col = parsed.data[:, ch["index"]]
-        if ch["category"] in ("流道压力", "室压", "隔离段"):
+        if ch["category"] in _press:
             col = col + corr
-        xs, ys = _downsample(parsed.time, col)
-        curves.append({"label": ch["label"],
-                       "x": [round(float(v), 4) for v in xs],
+        _, ys = _downsample(parsed.time, col)
+        series.append({"label": ch["label"], "category": ch["category"],
                        "y": [round(float(v), 4) for v in ys]})
+    # curves：默认前 6 路（向后兼容旧前端）
+    curves = [{"label": s["label"], "x": curve_x, "y": s["y"]} for s in series[:6]]
     return {"available": True, "n_rows": parsed.n_rows, "n_channels": len(parsed.channels),
             "channels": [c2["label"] for c2 in parsed.channels], "stats": stats,
             "phases": phases.__dict__, "steady_qoi": steady, "anomalies": anomalies,
-            "curves": curves}
+            "curves": curves, "curve_x": curve_x, "series": series}
+
+
+@router.get("/{case_id}/experiment/raw")
+def experiment_raw(case_id: int, offset: int = 0, limit: int = 50,
+                   db: Session = Depends(get_db)):
+    """原始数据分页（Time + 各通道原值，未加大气修正）——供"查看原始数据"表格。"""
+    c = db.get(Case, case_id)
+    if c is None:
+        raise HTTPException(404, "算例不存在")
+    if c.kind != CaseKind.EXPERIMENT:
+        raise HTTPException(400, "非试验车次")
+    path = Path(c.storage_uri)
+    if not path.exists():
+        return {"available": False, "reason": "原始文件不可用"}
+    try:
+        parsed = _parsed_experiment(path)
+    except Exception as e:  # noqa: BLE001
+        return {"available": False, "reason": f"解析失败：{e}"}
+    limit = max(1, min(int(limit), 500))
+    offset = max(0, int(offset))
+    tcol = exp_svc.settings.experiment.time_column
+    cols = [tcol] + [ch["index"] for ch in parsed.channels]
+    headers = ["Time (s)"] + [ch["label"] for ch in parsed.channels]
+    rows = []
+    for r in range(offset, min(offset + limit, parsed.n_rows)):
+        rows.append([round(float(parsed.data[r, ci]), 5) for ci in cols])
+    return {"available": True, "total": parsed.n_rows, "offset": offset, "limit": limit,
+            "headers": headers, "rows": rows}
 
 
 def _sim_overview(s: dict) -> dict:
