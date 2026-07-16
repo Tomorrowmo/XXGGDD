@@ -141,6 +141,10 @@
   .grid{display:grid;gap:14px}
   .cols-2{grid-template-columns:1fr 1fr}
   .cols-lib{grid-template-columns:320px 1fr}
+  .col-rz{position:absolute;top:0;bottom:0;width:9px;transform:translateX(-4px);cursor:col-resize;z-index:6;border-radius:3px}
+  .col-rz:hover,.col-rz.on{background:linear-gradient(90deg,transparent,var(--accent) 38%,var(--accent) 62%,transparent);opacity:.5}
+  .drawer-rz{position:absolute;top:0;left:0;bottom:0;width:9px;transform:translateX(-4px);cursor:col-resize;z-index:80}
+  .drawer-rz:hover,.drawer-rz.on{background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:.55}
   .cols-sim{grid-template-columns:220px 1fr}
   .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow)}
   .card-pad{padding:16px}
@@ -503,6 +507,7 @@
     .app{grid-template-columns:1fr;grid-template-areas:"top" "main" "foot"}
     .nav{display:none}
     .cols-2,.cols-lib,.cols-sim{grid-template-columns:1fr}
+    .col-rz{display:none}
     .chat{grid-template-columns:1fr}.chat-side{display:none}
   }
 </style>
@@ -1476,6 +1481,34 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
   let tmo; function toast(msg){ $('#toast-msg').textContent=msg; $('#toast').classList.add('show'); clearTimeout(tmo); tmo=setTimeout(()=>$('#toast').classList.remove('show'),2600); }
   window.toast=toast;
 
+  // ---- 面板宽度可拖拽调整（两栏布局 cols-lib/cols-sim/cols-2 + 侧栏抽屉）----
+  var _rzDrag=null;
+  function initResizers(scope){
+    (scope||document).querySelectorAll('.grid.cols-lib,.grid.cols-sim,.grid.cols-2').forEach(function(g){
+      if(g.dataset.rz) return; g.dataset.rz='1';
+      if(getComputedStyle(g).position==='static') g.style.position='relative';
+      var handle=document.createElement('div'); handle.className='col-rz'; g.appendChild(handle);
+      g._rzPlace=function(){ var c=getComputedStyle(g); var w=parseFloat(c.gridTemplateColumns.split(' ')[0])||220; handle.style.left=(w+(parseFloat(c.columnGap)||14)/2)+'px'; };
+      g._rzPlace();
+      handle.addEventListener('pointerdown',function(e){ _rzDrag=g; handle.classList.add('on'); e.preventDefault(); document.body.style.cursor='col-resize'; document.body.style.userSelect='none'; });
+    });
+  }
+  window.addEventListener('pointermove',function(e){ if(!_rzDrag) return; var g=_rzDrag; var r=g.getBoundingClientRect();
+    var w=Math.max(150,Math.min(r.width-220, e.clientX-r.left)); g.style.gridTemplateColumns=w+'px 1fr'; if(g._rzPlace) g._rzPlace(); });
+  window.addEventListener('pointerup',function(){ if(_rzDrag){ var h=_rzDrag.querySelector('.col-rz.on'); if(h)h.classList.remove('on'); _rzDrag=null; document.body.style.cursor=''; document.body.style.userSelect=''; } });
+  window.addEventListener('resize',function(){ $$('.grid[data-rz]').forEach(function(g){ if(g._rzPlace) g._rzPlace(); }); });
+  // 抽屉（查看数据）左缘可拖拽调宽
+  (function(){ var dr=document.getElementById('drawer'); if(!dr) return;
+    var h=document.createElement('div'); h.className='drawer-rz'; dr.appendChild(h);
+    var drag=false, sx=0, sw=0;
+    h.addEventListener('pointerdown',function(e){ drag=true; sx=e.clientX; sw=dr.getBoundingClientRect().width; h.classList.add('on'); h.setPointerCapture(e.pointerId); e.preventDefault(); document.body.style.cursor='col-resize'; });
+    window.addEventListener('pointermove',function(e){ if(!drag) return; dr.style.width=Math.max(380,Math.min(window.innerWidth*0.95, sw+(sx-e.clientX)))+'px'; });
+    window.addEventListener('pointerup',function(){ if(drag){ drag=false; h.classList.remove('on'); document.body.style.cursor=''; } });
+  })();
+  initResizers(document);
+  // 动态生成的两栏（仿真/试验分析面板）也自动加装拖拽（防抖）
+  var _rzT; new MutationObserver(function(){ clearTimeout(_rzT); _rzT=setTimeout(function(){ initResizers(document); },200); }).observe(document.body,{childList:true,subtree:true});
+
   // report list select
   $$('.rl-item').forEach(it=>it.addEventListener('click',()=>{ $$('.rl-item').forEach(x=>x.classList.toggle('on',x===it)); }));
 </script>
@@ -1564,8 +1597,26 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
           d.rows.map(function(row){ var tds=us.map(function(u){ var s=row.sources.filter(function(x){return x.unit===u;})[0]; if(!s) return '<td class="num">—</td>'; var ad=Math.abs(s.deviation_pct); return '<td class="num"'+(row.far_unit===u?' style="color:var(--warn)"':'')+'><span class="cell-val">'+s.value+'</span><span class="cell-dev '+(ad<=5?'ok':(ad<=15?'hi':'bad'))+'">'+(s.deviation_pct>0?'+':'')+s.deviation_pct+'%</span></td>'; }).join('');
             return '<tr class="stripe '+(row.status==='一致'?'ok':'warn')+'"><td class="qty">'+row.quantity+' <small style="color:var(--text-3)">'+(row.unit_dim||'')+'</small></td>'+tds+'<td class="num">'+row.mean+' ± '+row.std+'</td><td class="num" style="color:'+(row.cv_pct<=10?'var(--good)':'var(--warn)')+'">'+row.cv_pct+'%</td><td><span class="badge '+(row.status==='一致'?'b-good':'b-warn')+'">'+row.status+'</span></td></tr>'; }).join('')+'</tbody></table></div>';
       }
+      html+='<div style="margin-top:12px"><button class="chip" id="cmp-viz-btn">📈 可视化 · 按物理量看各源对比</button><div id="cmp-viz" style="display:none;margin-top:8px"></div></div>';
       l3.innerHTML=html; bindOp(); markLive();
       var mc=document.getElementById('cmp-mode'); if(mc){ mc.textContent=modeText; mc.style.color=modeColor||''; }
+      // 内联可视化：选一个物理量 → 各源取值柱状对比（不弹窗）
+      var cvb=document.getElementById('cmp-viz-btn'), cvbox=document.getElementById('cmp-viz'); var cvLoaded=false;
+      if(cvb) cvb.onclick=function(){ if(cvbox.style.display==='none'){ cvbox.style.display=''; cvb.textContent='📈 收起'; if(!cvLoaded){ cvLoaded=true; buildCmpViz(cvbox, d); } } else { cvbox.style.display='none'; cvb.textContent='📈 可视化 · 按物理量看各源对比'; } };
+    }
+    function buildCmpViz(box, d){
+      var rows=d.rows||[]; if(!rows.length){ box.innerHTML='<div class="note">无可视化数据</div>'; return; }
+      var truth=d.mode==='truth';
+      box.innerHTML='<div class="expcurve"><div class="chansel"><input id="cmpv-search" class="chansearch" placeholder="🔍 筛选物理量"><div id="cmpv-pick" class="chanpick"></div></div><div style="flex:1;min-width:0"><div id="cmpv-chart" class="chartbox"></div><p class="note" style="margin-top:6px">选一个物理量 → 各源取值对比（'+(truth?'含实验真值参照':'含共识均值')+'，越接近参照越准）。</p></div></div>';
+      var pick=document.getElementById('cmpv-pick'), chart=document.getElementById('cmpv-chart'); var qi=0;
+      pick.innerHTML=rows.map(function(r,i){return '<label class="chanck" title="'+(r.quantity||'').replace(/"/g,'&quot;')+'"><input type="radio" name="cmpvq" '+(i===0?'checked':'')+' data-qi="'+i+'">'+chShort(r.quantity)+'</label>';}).join('');
+      function draw(){ var r=rows[qi];
+        var items=(r.sources||[]).map(function(s){return {label:s.unit,value:+s.value,color:(truth&&s.best)?'var(--good)':'var(--u1)'};}).filter(function(x){return x.value===x.value;});
+        var ref=truth?+r.truth:+r.mean; if(ref===ref) items.unshift({label:truth?'实验真值':'共识均值',value:ref,color:'var(--accent)'});
+        chart.innerHTML=items.length? barChart(items, r.unit_dim||'') : '<p class="muted" style="padding:20px">该物理量无可比数据</p>'; }
+      pick.addEventListener('change',function(e){ var rr=e.target.closest('input'); if(rr){ qi=+rr.getAttribute('data-qi'); draw(); } });
+      var vs=document.getElementById('cmpv-search'); if(vs) vs.addEventListener('input',function(){ var qq=vs.value.trim().toLowerCase(); pick.querySelectorAll('.chanck').forEach(function(l){ l.style.display=(!qq||(l.getAttribute('title')||'').toLowerCase().indexOf(qq)>=0)?'':'none'; }); });
+      draw();
     }
     function bindOp(){ var s=document.getElementById('cmp-op'); if(s) s.addEventListener('change', function(){ renderOp(s.value); }); }
     renderOp(ops[0]);
