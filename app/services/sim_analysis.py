@@ -145,8 +145,12 @@ def x_slice_openfoam(case_path: str, n_slices: int = 100, gamma: float | None = 
 
 
 def x_slice(case_path: str, n_slices: int = 100, gamma: float | None = None) -> dict:
-    """分派：OpenFOAM/Fluent 进程内算；CGNS 等需 Romtek 的格式走子进程（复用渲染那套引擎载入）。"""
-    if _is_openfoam(case_path) or _is_fluent(case_path):
+    """分派：OpenFOAM（轻量）进程内算；Fluent/CGNS 走**子进程**隔离。
+
+    Fluent 的 vtkFLUENTCFFReader 读大 .cas.h5（数百 MB）在服务进程内会**段错误崩掉整个后端**
+    （VTK C++ 层，无 Python 回溯）；渲染早就用子进程隔离，沿程面平均也照此隔离。
+    """
+    if _is_openfoam(case_path):
         return x_slice_openfoam(case_path, n_slices, gamma)
     return _x_slice_subprocess(case_path, n_slices)
 
