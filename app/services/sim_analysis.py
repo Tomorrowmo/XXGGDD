@@ -23,6 +23,16 @@ def _is_openfoam(case_path: str) -> bool:
     return False
 
 
+def _is_fluent(case_path: str) -> bool:
+    """Fluent HDF5(.cas.h5)/传统(.cas)——标准 VTK 可进程内读，故沿程面平均可支持。"""
+    return str(case_path).lower().endswith((".cas.h5", ".cas.gz", ".cas"))
+
+
+def x_slice_supported(case_path: str) -> bool:
+    """沿程面平均是否可在进程内算（OpenFOAM/Fluent 标准 VTK 可读；CGNS 等需 Romtek 子进程，暂不支持）。"""
+    return _is_openfoam(case_path) or _is_fluent(case_path)
+
+
 def _volume_block(mb):
     """取体网格块（internalMesh / 单元最多的 UnstructuredGrid）。"""
     import vtk
@@ -55,19 +65,22 @@ def x_slice_openfoam(case_path: str, n_slices: int = 100, gamma: float | None = 
 
     返回 {available, x_mm, fields:{P_static,T_static,Mach,T0,P0}, n_slices, reason?}。
     """
-    if not _is_openfoam(case_path):
-        return {"available": False, "reason": "沿程面平均目前支持 OpenFOAM；其它格式需 Romtek 场数据（可扩展）"}
+    if not x_slice_supported(case_path):
+        return {"available": False, "reason": "沿程面平均支持 OpenFOAM / Fluent；CGNS 等需 Romtek 子进程（待接）"}
     try:
         import vtk  # noqa: F401
         from vtk.util.numpy_support import vtk_to_numpy
-        from app.services.render import openfoam_loader
+        from app.services.render import openfoam_loader, fluent_loader
     except Exception as e:  # noqa: BLE001
         return {"available": False, "reason": f"VTK 不可用：{e}"}
     p = Path(case_path)
     if str(p).lower().endswith(".foam"):
         p = p.parent
     try:
-        mb = openfoam_loader.load_openfoam(str(p))
+        if _is_fluent(case_path):
+            mb = fluent_loader.load_fluent(str(p))
+        else:
+            mb = openfoam_loader.load_openfoam(str(p))
         vol = _volume_block(mb)
         if vol is None or vol.GetNumberOfCells() == 0:
             return {"available": False, "reason": "无体网格单元"}
@@ -79,17 +92,25 @@ def x_slice_openfoam(case_path: str, n_slices: int = 100, gamma: float | None = 
         cx = centers[:, 0]
 
         cd = vol.GetCellData()
-        p_static = _cell_array(cd, "p", "P", "SV_P")
-        t_static = _cell_array(cd, "T", "SV_T")
-        rho = _cell_array(cd, "rho", "density", "SV_DENSITY")
+        # 场名兼容 OpenFOAM(p/T/rho/U) 与 Fluent(规范名 Pressure/Temperature/Density/VelocityX… 或 SV_*)
+        p_static = _cell_array(cd, "p", "P", "Pressure", "SV_P")
+        t_static = _cell_array(cd, "T", "Temperature", "SV_T")
+        rho = _cell_array(cd, "rho", "density", "Density", "SV_DENSITY")
         u = _cell_array(cd, "U", "SV_U")
         if p_static is None or t_static is None:
             return {"available": False, "reason": "缺静压/静温场（p/T）"}
-        # 速度大小
+        # 速度大小：单个 3 分量场（OpenFOAM U）或三个标量分量（Fluent VelocityX/Y/Z）
         if u is not None and u.ndim == 2 and u.shape[1] >= 3:
             velmag = C.velocity_magnitude(u[:, 0], u[:, 1], u[:, 2])
         else:
-            velmag = np.zeros_like(p_static)
+            vx = _cell_array(cd, "VelocityX", "U_0", "Ux")
+            vy = _cell_array(cd, "VelocityY", "U_1", "Uy")
+            vz = _cell_array(cd, "VelocityZ", "U_2", "Uz")
+            if vx is not None:
+                z = np.zeros_like(vx)
+                velmag = C.velocity_magnitude(vx, vy if vy is not None else z, vz if vz is not None else z)
+            else:
+                velmag = np.zeros_like(p_static)
         # 密度缺省时用理想气体 ρ=p/(R·T)（可压缩 OpenFOAM 常不落 rho 场）
         if rho is None:
             from app.settings import settings

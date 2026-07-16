@@ -292,7 +292,7 @@ def simulation_detail(case_id: int, db: Session = Depends(get_db)):
             "expert": _sim_expert(overview, conv, qoi_items, mesh),
             "preview_urls": urls,
             "previews_rendering": bool(previews.get("rendering")),
-            "x_slice_available": sim_analysis._is_openfoam(uri)}
+            "x_slice_available": sim_analysis.x_slice_supported(uri)}
 
 
 @router.get("/{case_id}/vtp")

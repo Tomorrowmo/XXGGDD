@@ -7,6 +7,8 @@ import pytest
 from app.services import sim_analysis
 
 _CASE = Path(r"D:/Git/SimGraph2/test_data/DLR_A_LTS")
+_FLUENT = Path(r"D:/Git/XGDRSight/HYY_PerfomanceAnalysis/Case/case1/"
+               r"Ma6.0-con1-0.6+0.4-hot-2nd-final.cas.h5")
 
 
 def test_is_openfoam():
@@ -14,9 +16,26 @@ def test_is_openfoam():
     assert sim_analysis._is_openfoam("x/case.cgns") is False
 
 
+def test_x_slice_supported_formats():
+    assert sim_analysis.x_slice_supported("x/case.foam") is True
+    assert sim_analysis.x_slice_supported("x/a.cas.h5") is True   # Fluent 标准 VTK 进程内可读
+    assert sim_analysis.x_slice_supported("x/a.cas") is True
+    assert sim_analysis.x_slice_supported("x/mesh.cgns") is False  # CGNS 需 Romtek 子进程
+
+
 def test_x_slice_unsupported_format():
     d = sim_analysis.x_slice_openfoam("x/mesh.cgns")
     assert d["available"] is False
+
+
+@pytest.mark.skipif(not _FLUENT.exists(), reason="Fluent 测试算例不可用")
+def test_x_slice_fluent_real():
+    d = sim_analysis.x_slice_openfoam(str(_FLUENT), n_slices=20)
+    assert d["available"] is True, d.get("reason")
+    for k in ("P_static", "T_static", "Mach", "T0", "P0"):
+        assert k in d["fields"] and len(d["fields"][k]) == len(d["x_mm"])
+    t = np.array([v for v in d["fields"]["T_static"] if v is not None])
+    assert 250 < np.nanmax(t) < 4000    # 燃烧温度合理区间
 
 
 @pytest.mark.skipif(not _CASE.exists(), reason="DLR 测试算例不可用")
