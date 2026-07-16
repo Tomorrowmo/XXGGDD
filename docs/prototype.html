@@ -319,10 +319,11 @@
   .chansel{flex:none;width:210px;display:flex;flex-direction:column;gap:5px}
   .chansearch{font-size:12px;padding:6px 9px;border:1px solid var(--border);border-radius:7px;background:var(--surface-2);color:var(--text);outline:none}
   .chansearch:focus{border-color:var(--accent)}
-  .chanpick{flex:1;min-height:120px;max-height:230px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:6px;background:var(--surface);display:flex;flex-direction:column;gap:2px}
-  .chanck{display:flex;gap:6px;align-items:center;font-size:11.5px;color:var(--text-2);padding:3px 5px;border-radius:5px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .chanpick{flex:1;min-height:120px;max-height:230px;overflow-y:auto;overflow-x:hidden;border:1px solid var(--border);border-radius:8px;padding:6px;background:var(--surface);display:flex;flex-direction:column;gap:3px}
+  .chanck{display:flex;gap:7px;align-items:center;font-size:12px;line-height:1.5;color:var(--text-2);padding:4px 7px;border-radius:5px;cursor:pointer;min-height:24px}
   .chanck:hover{background:var(--surface-2);color:var(--text)}
-  .chanck input{accent-color:var(--accent);flex:none}
+  .chanck input{accent-color:var(--accent);flex:none;margin:0}
+  .chanck .cktxt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .rawtbl{font-family:var(--mono);font-size:12px;min-width:720px}
   .rawtbl th,.rawtbl td{padding:6px 12px;font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;border-bottom:1px solid var(--border)}
   .rawtbl thead th{background:var(--bg-2);color:var(--text-2);position:sticky;top:0}
@@ -1608,7 +1609,7 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
       var truth=d.mode==='truth';
       box.innerHTML='<div class="expcurve"><div class="chansel"><input id="cmpv-search" class="chansearch" placeholder="🔍 筛选物理量"><div id="cmpv-pick" class="chanpick"></div></div><div style="flex:1;min-width:0"><div id="cmpv-chart" class="chartbox"></div><p class="note" style="margin-top:6px">选一个物理量 → 各源取值对比（'+(truth?'含实验真值参照':'含共识均值')+'，越接近参照越准）。</p></div></div>';
       var pick=document.getElementById('cmpv-pick'), chart=document.getElementById('cmpv-chart'); var qi=0;
-      pick.innerHTML=rows.map(function(r,i){return '<label class="chanck" title="'+(r.quantity||'').replace(/"/g,'&quot;')+'"><input type="radio" name="cmpvq" '+(i===0?'checked':'')+' data-qi="'+i+'">'+chShort(r.quantity)+'</label>';}).join('');
+      pick.innerHTML=rows.map(function(r,i){return '<label class="chanck" title="'+(r.quantity||'').replace(/"/g,'&quot;')+'"><input type="radio" name="cmpvq" '+(i===0?'checked':'')+' data-qi="'+i+'"><span class="cktxt">'+chShort(r.quantity)+'</span></label>';}).join('');
       function draw(){ var r=rows[qi];
         var items=(r.sources||[]).map(function(s){return {label:s.unit,value:+s.value,color:(truth&&s.best)?'var(--good)':'var(--u1)'};}).filter(function(x){return x.value===x.value;});
         var ref=truth?+r.truth:+r.mean; if(ref===ref) items.unshift({label:truth?'实验真值':'共识均值',value:ref,color:'var(--accent)'});
@@ -2058,7 +2059,7 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
       var pick=document.getElementById('exp-chanpick'), chart=document.getElementById('exp-chart'); if(!pick||!chart) return;
       var series=d.series||[], x=d.curve_x||[];
       if(!series.length){ chart.innerHTML=lineChart(d.curves||[],470,210); return; }
-      pick.innerHTML=series.map(function(s,i){ return '<label class="chanck" title="'+s.label+'"><input type="checkbox" data-si="'+i+'"'+(i<4?' checked':'')+'>'+_shortLbl(s.label)+'</label>'; }).join('');
+      pick.innerHTML=series.map(function(s,i){ return '<label class="chanck" title="'+s.label.replace(/"/g,'&quot;')+'"><input type="checkbox" data-si="'+i+'"'+(i<4?' checked':'')+'><span class="cktxt">'+_shortLbl(s.label)+'</span></label>'; }).join('');
       function draw(){ var sel=[]; pick.querySelectorAll('input:checked').forEach(function(cb){ var i=+cb.getAttribute('data-si'); if(series[i]) sel.push({label:_shortLbl(series[i].label),x:x,y:series[i].y}); });
         chart.innerHTML = sel.length? lineChart(sel.slice(0,8),470,210) : '<p class="muted" style="padding:24px;text-align:center">勾选左侧物理量以显示曲线（最多同时 8 路）</p>'; }
       pick.addEventListener('change',draw); draw();
@@ -2461,7 +2462,7 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
       var quants=rows.map(function(r){return r.quantity;});
       box.innerHTML='<div class="expcurve"><div class="chansel"><input id="expx-vsearch" class="chansearch" placeholder="🔍 筛选物理量"><div id="expx-vpick" class="chanpick"></div></div><div style="flex:1;min-width:0"><div id="expx-vchart" class="chartbox"></div><p class="note" style="margin-top:6px">选一个物理量 → 各车次时程叠加，看重复性（曲线颜色=车次）。</p></div></div>';
       var pick=document.getElementById('expx-vpick'), chart=document.getElementById('expx-vchart'); var curQi=0;
-      pick.innerHTML=quants.map(function(q,i){return '<label class="chanck" title="'+q.replace(/"/g,'&quot;')+'"><input type="radio" name="expxq" '+(i===0?'checked':'')+' data-qi="'+i+'">'+chShort(q)+'</label>';}).join('');
+      pick.innerHTML=quants.map(function(q,i){return '<label class="chanck" title="'+q.replace(/"/g,'&quot;')+'"><input type="radio" name="expxq" '+(i===0?'checked':'')+' data-qi="'+i+'"><span class="cktxt">'+chShort(q)+'</span></label>';}).join('');
       function draw(){ var q=quants[curQi];
         var curves=trains.map(function(t){ var s=(t.ed.series||[]).filter(function(x){return x.label===q;})[0]; return s?{label:t.name,x:t.ed.curve_x,y:s.y}:null; }).filter(Boolean);
         chart.innerHTML = curves.length? lineChart(curves,470,220) : '<p class="muted" style="padding:24px;text-align:center">该物理量在所选车次中无数据</p>'; }
