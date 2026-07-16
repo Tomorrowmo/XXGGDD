@@ -2017,17 +2017,34 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
 
   // ---- 分析屏通用小工具 ----
   function chShort(l){ return (l||'').replace(/\s*-\s*\([^)]*\)\s*$/,'').replace(/^通道\s*\d+\s*\/?\s*/,'').trim().slice(0,22)||l; }
-  function lineChart(curves,w,h){
+  function chUnit(l){ var m=(l||'').match(/\(([^)]*)\)\s*$/); return m?m[1].trim():''; }
+  function _fmtTick(v){ if(v===0) return '0'; var a=Math.abs(v); if(a<0.001||a>=1e5) return v.toExponential(1); return (Math.round(v*1000)/1000).toString(); }
+  function lineChart(curves,w,h,opts){
     if(!curves||!curves.length) return '';
-    var ally=[]; curves.forEach(function(c){ ally=ally.concat(c.y); });
-    var ymin=Math.min.apply(null,ally), ymax=Math.max.apply(null,ally);
-    var xs=curves[0].x, xmin=xs[0], xmax=xs[xs.length-1];
-    var cols=['var(--u1)','var(--u2)','var(--u3)','var(--accent)'];
-    function px(x){ return 40+(x-xmin)/((xmax-xmin)||1)*(w-50); }
-    function py(y){ return 15+(1-(y-ymin)/((ymax-ymin)||1))*(h-35); }
-    var polys=curves.map(function(c,i){ return '<polyline fill="none" stroke="'+cols[i%4]+'" stroke-width="1.5" points="'+c.x.map(function(x,j){return px(x).toFixed(1)+','+py(c.y[j]).toFixed(1);}).join(' ')+'"/>'; }).join('');
-    var lg=curves.map(function(c,i){return '<span><i style="background:'+cols[i%4]+'"></i>'+c.label+'</span>';}).join('');
-    return '<div class="legend">'+lg+'</div><svg viewBox="0 0 '+w+' '+h+'" width="100%" height="'+(h-8)+'"><line class="grid" x1="40" y1="15" x2="40" y2="'+(h-20)+'"/><line class="grid" x1="40" y1="'+(h-20)+'" x2="'+(w-10)+'" y2="'+(h-20)+'"/>'+polys+'</svg>';
+    opts=opts||{}; w=w||820; h=h||330;
+    var mL=64,mR=18,mT=12,mB=opts.xlabel?46:32;
+    var ally=[],allx=[];
+    curves.forEach(function(c){ ally=ally.concat(c.y); allx=allx.concat(c.x); });
+    var ymin=(opts.ymin!=null?opts.ymin:Math.min.apply(null,ally)), ymax=(opts.ymax!=null?opts.ymax:Math.max.apply(null,ally));
+    var xmin=(opts.xmin!=null?opts.xmin:Math.min.apply(null,allx)), xmax=(opts.xmax!=null?opts.xmax:Math.max.apply(null,allx));
+    if(!(ymax>ymin)){ ymax=ymin+1; ymin=ymin-1; } if(!(xmax>xmin)) xmax=xmin+1;
+    var pad=(ymax-ymin)*0.06; ymin-=pad; ymax+=pad;
+    var cols=['var(--u1)','var(--u2)','var(--u3)','var(--accent)','#e0663a','#7c5cff','#2fae9a','#d94c8a'];
+    function px(x){ return mL+(x-xmin)/(xmax-xmin)*(w-mL-mR); }
+    function py(y){ return mT+(1-(y-ymin)/(ymax-ymin))*(h-mT-mB); }
+    var grid='';
+    for(var t=0;t<=4;t++){ var yv=ymin+(ymax-ymin)*t/4, yy=py(yv);
+      grid+='<line x1="'+mL+'" y1="'+yy.toFixed(1)+'" x2="'+(w-mR)+'" y2="'+yy.toFixed(1)+'" stroke="var(--border)" stroke-width="0.6" opacity="0.55"/><text x="'+(mL-8)+'" y="'+(yy+3.5).toFixed(1)+'" text-anchor="end" font-size="11" fill="var(--text-3)">'+_fmtTick(yv)+'</text>'; }
+    for(var t2=0;t2<=5;t2++){ var xv=xmin+(xmax-xmin)*t2/5, xx=px(xv);
+      grid+='<line x1="'+xx.toFixed(1)+'" y1="'+mT+'" x2="'+xx.toFixed(1)+'" y2="'+(h-mB)+'" stroke="var(--border)" stroke-width="0.6" opacity="0.35"/><text x="'+xx.toFixed(1)+'" y="'+(h-mB+16)+'" text-anchor="middle" font-size="11" fill="var(--text-3)">'+_fmtTick(xv)+'</text>'; }
+    var polys=curves.map(function(c,i){ return '<polyline fill="none" stroke="'+cols[i%cols.length]+'" stroke-width="1.5" vector-effect="non-scaling-stroke" points="'+c.x.map(function(x,j){return px(x).toFixed(1)+','+py(c.y[j]).toFixed(1);}).join(' ')+'"/>'; }).join('');
+    var axisT='';
+    if(opts.xlabel) axisT+='<text x="'+((mL+w-mR)/2).toFixed(0)+'" y="'+(h-6)+'" text-anchor="middle" font-size="12" fill="var(--text-2)">'+opts.xlabel+'</text>';
+    if(opts.ylabel){ var cy=((mT+h-mB)/2).toFixed(0); axisT+='<text x="16" y="'+cy+'" text-anchor="middle" font-size="12" fill="var(--text-2)" transform="rotate(-90 16 '+cy+')">'+opts.ylabel+'</text>'; }
+    var lg=curves.map(function(c,i){return '<span><i style="background:'+cols[i%cols.length]+'"></i>'+c.label+'</span>';}).join('');
+    return '<div class="legend" style="margin-bottom:6px">'+lg+'</div><svg viewBox="0 0 '+w+' '+h+'" style="width:100%;height:auto;display:block">'
+      +grid+'<line x1="'+mL+'" y1="'+mT+'" x2="'+mL+'" y2="'+(h-mB)+'" stroke="var(--border-strong)"/><line x1="'+mL+'" y1="'+(h-mB)+'" x2="'+(w-mR)+'" y2="'+(h-mB)+'" stroke="var(--border-strong)"/>'
+      +polys+axisT+'</svg>';
   }
   function phaseBar(ph){
     if(!ph) return '';
@@ -2047,7 +2064,7 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
       var d=pre||await getJSON(API+'/cases/'+cid+'/experiment'); var html=sel(cid);
       if(!d||!d.available){ pane.innerHTML=html+'<div class="placeholder" style="margin-top:12px">'+((d&&d.reason)||'无数据')+'</div>'; bind(); return; }
       html+='<div class="stat-row"><div class="stat"><div class="k">通道</div><div class="v">'+d.n_channels+'</div></div><div class="stat"><div class="k">行数</div><div class="v">'+d.n_rows.toLocaleString()+'</div></div><div class="stat"><div class="k">稳态段</div><div class="v">'+((d.phases.steady[1]-d.phases.steady[0])).toFixed(1)+'<small>s</small></div></div><div class="stat"><div class="k">异常</div><div class="v" style="color:'+(d.anomalies.length?'var(--warn)':'var(--good)')+'">'+d.anomalies.length+'</div></div></div>';
-      html+='<div class="sect-label">时序曲线 · 勾选物理量切换显示</div><div class="expcurve"><div class="chansel"><input id="exp-chansearch" class="chansearch" placeholder="🔍 筛选通道（如 流道 / 室压）"><div id="exp-chanpick" class="chanpick"></div></div><div id="exp-chart" class="chartbox" style="flex:1;min-width:0"></div></div>';
+      html+='<div class="sect-label">时序曲线 · 勾选物理量切换显示</div><div class="expcurve"><div class="chansel"><input id="exp-chansearch" class="chansearch" placeholder="🔍 筛选通道（如 流道 / 室压）"><div id="exp-chanpick" class="chanpick"></div></div><div style="flex:1;min-width:0"><div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:12px;color:var(--text-2)"><span>X 轴</span><select id="exp-xaxis" class="model-pick" style="font-size:12px"><option value="__t">时间 (s)</option></select><span style="margin-left:auto;color:var(--text-3)">Y 轴 = 左侧勾选的物理量（可多选叠加）</span></div><div id="exp-chart" class="chartbox" style="padding:10px"></div></div></div>';
       html+='<div class="sect-label">阶段分割</div><div class="card card-pad">'+phaseBar(d.phases)+'<p class="note">关键量从主级稳态段提取。</p></div>';
       html+='<div class="sect-label">通道统计（全 '+d.n_channels+' 路）</div><div class="tblwrap" style="max-height:300px;overflow:auto"><table><thead><tr><th>通道</th><th class="num">最小</th><th class="num">最大</th><th class="num">均值</th><th class="num">标准差</th></tr></thead><tbody>'+d.stats.slice(0,30).map(function(s){return '<tr><td class="qty">'+s.label+'</td><td class="num">'+s.min+'</td><td class="num">'+s.max+'</td><td class="num">'+s.mean+'</td><td class="num">'+s.std+'</td></tr>';}).join('')+'</tbody></table></div>';
       html+='<div class="sect-label">稳态关键量 → 真值</div><div class="tblwrap" style="max-height:280px;overflow:auto"><table><thead><tr><th>物理量</th><th class="num">值</th><th class="num">单位</th><th>提取</th></tr></thead><tbody>'+d.steady_qoi.slice(0,30).map(function(q){return '<tr><td class="qty">'+q.quantity+'</td><td class="num">'+q.value+'</td><td class="num">'+q.unit+'</td><td class="muted" style="color:var(--text-2)">'+q.method+'</td></tr>';}).join('')+'</tbody></table></div>';
@@ -2056,14 +2073,25 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
       setupCurve(d); setupRaw(cid, d.n_rows);
     }
     function _shortLbl(l){ return (l||'').replace(/\s*-\s*\([^)]*\)\s*$/,'').replace(/^通道\s*\d+\s*\/?\s*/,'').trim().slice(0,22)||l; }
+    function _unitOf(l){ var m=(l||'').match(/\(([^)]*)\)\s*$/); return m?m[1].trim():''; }
     function setupCurve(d){
       var pick=document.getElementById('exp-chanpick'), chart=document.getElementById('exp-chart'); if(!pick||!chart) return;
       var series=d.series||[], x=d.curve_x||[];
-      if(!series.length){ chart.innerHTML=lineChart(d.curves||[],470,210); return; }
+      if(!series.length){ chart.innerHTML=lineChart(d.curves||[],820,320,{xlabel:'时间 (s)'}); return; }
       pick.innerHTML=series.map(function(s,i){ return '<label class="chanck" title="'+s.label.replace(/"/g,'&quot;')+'"><input type="checkbox" data-si="'+i+'"'+(i<4?' checked':'')+'><span class="cktxt">'+_shortLbl(s.label)+'</span></label>'; }).join('');
-      function draw(){ var sel=[]; pick.querySelectorAll('input:checked').forEach(function(cb){ var i=+cb.getAttribute('data-si'); if(series[i]) sel.push({label:_shortLbl(series[i].label),x:x,y:series[i].y}); });
-        chart.innerHTML = sel.length? lineChart(sel.slice(0,8),470,210) : '<p class="muted" style="padding:24px;text-align:center">勾选左侧物理量以显示曲线（最多同时 8 路）</p>'; }
-      pick.addEventListener('change',draw); draw();
+      var xsel=document.getElementById('exp-xaxis');
+      if(xsel) xsel.innerHTML='<option value="__t">时间 (s)</option>'+series.map(function(s,i){return '<option value="'+i+'">'+_shortLbl(s.label)+'</option>';}).join('');
+      function draw(){ var idx=[]; pick.querySelectorAll('input:checked').forEach(function(cb){ idx.push(+cb.getAttribute('data-si')); });
+        if(!idx.length){ chart.innerHTML='<p class="muted" style="padding:30px;text-align:center">勾选左侧物理量以显示曲线（最多同时 8 路）</p>'; return; }
+        var yunit=_unitOf(series[idx[0]].label)||'物理量';
+        var xv=xsel?xsel.value:'__t';
+        if(xv==='__t'){ var sel=idx.slice(0,8).map(function(i){return {label:_shortLbl(series[i].label),x:x,y:series[i].y};});
+          chart.innerHTML=lineChart(sel,820,340,{xlabel:'时间 (s)', ylabel:yunit}); }
+        else { var xi=+xv, xarr=series[xi].y, xu=_unitOf(series[xi].label);
+          var sel=idx.filter(function(i){return i!==xi;}).slice(0,8).map(function(i){return {label:_shortLbl(series[i].label),x:xarr,y:series[i].y};});
+          chart.innerHTML = sel.length? lineChart(sel,820,340,{xlabel:_shortLbl(series[xi].label)+(xu?(' ('+xu+')'):''), ylabel:yunit}) : '<p class="muted" style="padding:30px;text-align:center">再勾选一个与 X 轴不同的物理量作 Y</p>'; }
+      }
+      pick.addEventListener('change',draw); if(xsel) xsel.addEventListener('change',draw); draw();
       var srch=document.getElementById('exp-chansearch');
       if(srch) srch.addEventListener('input', function(){ var q=srch.value.trim().toLowerCase();
         pick.querySelectorAll('.chanck').forEach(function(l){ l.style.display=(!q||(l.getAttribute('title')||'').toLowerCase().indexOf(q)>=0)?'':'none'; }); });
@@ -2466,7 +2494,7 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
       pick.innerHTML=quants.map(function(q,i){return '<label class="chanck" title="'+q.replace(/"/g,'&quot;')+'"><input type="radio" name="expxq" '+(i===0?'checked':'')+' data-qi="'+i+'"><span class="cktxt">'+chShort(q)+'</span></label>';}).join('');
       function draw(){ var q=quants[curQi];
         var curves=trains.map(function(t){ var s=(t.ed.series||[]).filter(function(x){return x.label===q;})[0]; return s?{label:t.name,x:t.ed.curve_x,y:s.y}:null; }).filter(Boolean);
-        chart.innerHTML = curves.length? lineChart(curves,470,220) : '<p class="muted" style="padding:24px;text-align:center">该物理量在所选车次中无数据</p>'; }
+        chart.innerHTML = curves.length? lineChart(curves,820,330,{xlabel:'时间 (s)', ylabel:chShort(q)+(chUnit(q)?(' ('+chUnit(q)+')'):'')}) : '<p class="muted" style="padding:24px;text-align:center">该物理量在所选车次中无数据</p>'; }
       pick.addEventListener('change',function(e){ var r=e.target.closest('input'); if(r){ curQi=+r.getAttribute('data-qi'); draw(); } });
       var vs=document.getElementById('expx-vsearch'); if(vs) vs.addEventListener('input',function(){ var qq=vs.value.trim().toLowerCase(); pick.querySelectorAll('.chanck').forEach(function(l){ l.style.display=(!qq||(l.getAttribute('title')||'').toLowerCase().indexOf(qq)>=0)?'':'none'; }); });
       draw();
