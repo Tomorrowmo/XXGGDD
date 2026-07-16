@@ -1964,6 +1964,7 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
   }
 
   // ---- 分析屏通用小工具 ----
+  function chShort(l){ return (l||'').replace(/\s*-\s*\([^)]*\)\s*$/,'').replace(/^通道\s*\d+\s*\/?\s*/,'').trim().slice(0,22)||l; }
   function lineChart(curves,w,h){
     if(!curves||!curves.length) return '';
     var ally=[]; curves.forEach(function(c){ ally=ally.concat(c.y); });
@@ -2388,13 +2389,35 @@ Time (s),流道22,流道23,流道24,室压1,隔离段3,壁温3,...  ← 第11行
         return '<tr class="stripe '+(row.verdict==='一致'?'ok':'warn')+'"><td class="qty">'+row.quantity+' <small style="color:var(--text-3)">'+(row.unit||'')+'</small></td>'+tds+
           '<td class="num">'+row.mean+' ± '+row.std+'</td><td class="num" style="color:'+(row.cv_pct<=2?'var(--good)':'var(--warn)')+'">'+row.cv_pct+'%</td><td><span class="badge '+vc+'">'+row.verdict+'</span></td></tr>';
       }).join('');
-      var tbl='<div class="sect-label">重复性统计 · 关键量（均值 ± σ · 变异系数 CV）</div><div class="tblwrap"><table><thead>'+th+'</thead><tbody>'+body+'</tbody></table></div>';
+      var tbl='<div class="sect-label" style="display:flex;align-items:center;gap:8px">重复性统计 · 关键量（均值 ± σ · 变异系数 CV）<button class="chip" id="expx-viz-btn" style="margin-left:auto">📈 可视化对比曲线</button></div><div class="tblwrap"><table><thead>'+th+'</thead><tbody>'+body+'</tbody></table></div><div id="expx-viz" style="display:none;margin-top:10px"></div>';
       var diag='';
       if(oid){ diag='<div class="diag" style="margin-top:14px"><div class="hd"><span class="yuan">析</span>重复性结论 <span class="badge b-high" style="margin-left:auto"><span class="d"></span>HIGH</span></div>'+
         '<p><b style="color:var(--text)">离群</b>：'+oname+' 在多个关键量上系统性偏离均值 → 疑似当日来流条件或传感器零点漂移，建议复核试验记录。</p>'+
         '<p style="margin:0"><b style="color:var(--text)">真值建议</b>：剔除 '+oname+' 后平均 CV '+d.avg_cv_clean+'%，取其余车次均值作该工况实验真值。</p></div>';
       } else { diag='<div class="diag" style="margin-top:14px"><div class="hd"><span class="yuan">析</span>重复性结论 <span class="badge b-high" style="margin-left:auto"><span class="d"></span>HIGH</span></div><p style="margin:0">各车次关键量平均 CV '+d.avg_cv+'%，<b style="color:var(--good)">无显著离群</b>，重复性良好，可取各车次均值作实验真值。</p></div>'; }
       out.innerHTML=stat+tbl+diag;
+      // 内联可视化：同一物理量在各车次的时程叠加（不弹窗，直接在表下展开）
+      var vbtn=document.getElementById('expx-viz-btn'), vbox=document.getElementById('expx-viz'); var vizLoaded=false;
+      if(vbtn) vbtn.onclick=async function(){
+        if(vbox.style.display==='none'){ vbox.style.display=''; vbtn.textContent='📈 收起曲线'; if(!vizLoaded){ vizLoaded=true; await buildExpViz(vbox, cs, d.rows); } }
+        else { vbox.style.display='none'; vbtn.textContent='📈 可视化对比曲线'; }
+      };
+    }
+    async function buildExpViz(box, cases, rows){
+      box.innerHTML='<p class="muted">加载各车次时序…</p>';
+      var eds=await Promise.all(cases.map(function(c){return getJSON(API+'/cases/'+c.id+'/experiment');}));
+      var trains=cases.map(function(c,i){return {name:c.name, ed:eds[i]};}).filter(function(t){return t.ed&&t.ed.available&&t.ed.series;});
+      if(!trains.length){ box.innerHTML='<div class="note">无法加载车次时序数据</div>'; return; }
+      var quants=rows.map(function(r){return r.quantity;});
+      box.innerHTML='<div class="expcurve"><div class="chansel"><input id="expx-vsearch" class="chansearch" placeholder="🔍 筛选物理量"><div id="expx-vpick" class="chanpick"></div></div><div style="flex:1;min-width:0"><div id="expx-vchart" class="chartbox"></div><p class="note" style="margin-top:6px">选一个物理量 → 各车次时程叠加，看重复性（曲线颜色=车次）。</p></div></div>';
+      var pick=document.getElementById('expx-vpick'), chart=document.getElementById('expx-vchart'); var curQi=0;
+      pick.innerHTML=quants.map(function(q,i){return '<label class="chanck" title="'+q.replace(/"/g,'&quot;')+'"><input type="radio" name="expxq" '+(i===0?'checked':'')+' data-qi="'+i+'">'+chShort(q)+'</label>';}).join('');
+      function draw(){ var q=quants[curQi];
+        var curves=trains.map(function(t){ var s=(t.ed.series||[]).filter(function(x){return x.label===q;})[0]; return s?{label:t.name,x:t.ed.curve_x,y:s.y}:null; }).filter(Boolean);
+        chart.innerHTML = curves.length? lineChart(curves,470,220) : '<p class="muted" style="padding:24px;text-align:center">该物理量在所选车次中无数据</p>'; }
+      pick.addEventListener('change',function(e){ var r=e.target.closest('input'); if(r){ curQi=+r.getAttribute('data-qi'); draw(); } });
+      var vs=document.getElementById('expx-vsearch'); if(vs) vs.addEventListener('input',function(){ var qq=vs.value.trim().toLowerCase(); pick.querySelectorAll('.chanck').forEach(function(l){ l.style.display=(!qq||(l.getAttribute('title')||'').toLowerCase().indexOf(qq)>=0)?'':'none'; }); });
+      draw();
     }
     document.getElementById('expx-run').addEventListener('click', run);
     run();
