@@ -323,13 +323,13 @@ def turntable(case_id: int, n: int = 24, db: Session = Depends(get_db)):
 
 @router.get("/{case_id}/x-slice")
 def x_slice(case_id: int, n_slices: int = 100, db: Session = Depends(get_db)):
-    """沿程面平均（静压/静温/马赫/总温/总压）—— 用公式库算真实场（OpenFOAM）。"""
+    """沿程面平均（静压/静温/马赫/总温/总压）—— OpenFOAM/Fluent 进程内、CGNS 走 Romtek 子进程。"""
     c = db.get(Case, case_id)
     if c is None:
         raise HTTPException(404, "算例不存在")
     if c.kind != CaseKind.SIMULATION:
         raise HTTPException(400, "非仿真算例")
-    return sim_analysis.x_slice_openfoam(c.storage_uri, n_slices=n_slices)
+    return sim_analysis.x_slice(c.storage_uri, n_slices=n_slices)
 
 
 # ------------------------------------------------------------------ 多算例 / 多车次对比

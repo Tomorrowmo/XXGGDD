@@ -29,8 +29,10 @@ def _is_fluent(case_path: str) -> bool:
 
 
 def x_slice_supported(case_path: str) -> bool:
-    """沿程面平均是否可在进程内算（OpenFOAM/Fluent 标准 VTK 可读；CGNS 等需 Romtek 子进程，暂不支持）。"""
-    return _is_openfoam(case_path) or _is_fluent(case_path)
+    """沿程面平均是否支持该格式：OpenFOAM/Fluent 进程内；CGNS 等经 Romtek 子进程也支持。"""
+    s = str(case_path).lower()
+    return (_is_openfoam(case_path) or _is_fluent(case_path)
+            or s.endswith((".cgns", ".cga", ".plt", ".case", ".vtu", ".vtm", ".vtk")))
 
 
 def _volume_block(mb):
@@ -60,16 +62,75 @@ def _cell_array(cell_data, *names):
     return None
 
 
-def x_slice_openfoam(case_path: str, n_slices: int = 100, gamma: float | None = None) -> dict:
-    """沿 X 薄层面平均：静压/静温/马赫/总温/总压（马赫等走 formulas 等熵关系）。
+_P_NAMES = ("p", "P", "Pressure", "pressure", "SV_P", "StaticPressure")
+_T_NAMES = ("T", "Temperature", "temperature", "SV_T", "StaticTemperature")
+_RHO_NAMES = ("rho", "density", "Density", "SV_DENSITY")
+_MACH_NAMES = ("Mach", "mach", "Ma", "mach_number", "MachNumber")
 
-    返回 {available, x_mm, fields:{P_static,T_static,Mach,T0,P0}, n_slices, reason?}。
+
+def _compute_x_slice(mb, n_slices: int = 100, gamma: float | None = None) -> dict:
+    """核心：给一个 VTK multiblock → 沿 X 薄层面平均（静压/静温/马赫/总温/总压）。
+
+    与加载引擎无关：OpenFOAM/Fluent 进程内传入，CGNS 由 Romtek 子进程传入。
+    单元数据优先，无则退点数据；已有 Mach 场则直接用，否则等熵算。
     """
-    if not x_slice_supported(case_path):
-        return {"available": False, "reason": "沿程面平均支持 OpenFOAM / Fluent；CGNS 等需 Romtek 子进程（待接）"}
+    import vtk
+    from vtk.util.numpy_support import vtk_to_numpy
+    vol = _volume_block(mb)
+    if vol is None or vol.GetNumberOfCells() == 0:
+        return {"available": False, "reason": "无体网格单元"}
+    cd = vol.GetCellData()
+    if _cell_array(cd, *_P_NAMES) is not None:      # 单元场 → 用单元中心 x
+        cc = vtk.vtkCellCenters(); cc.SetInputData(vol); cc.Update()
+        cx = vtk_to_numpy(cc.GetOutput().GetPoints().GetData())[:, 0]
+        data = cd
+    else:                                            # 点场 → 用点 x
+        cx = vtk_to_numpy(vol.GetPoints().GetData())[:, 0]
+        data = vol.GetPointData()
+    p_static = _cell_array(data, *_P_NAMES)
+    t_static = _cell_array(data, *_T_NAMES)
+    rho = _cell_array(data, *_RHO_NAMES)
+    if p_static is None or t_static is None:
+        return {"available": False, "reason": "缺静压/静温场（p/T）"}
+    u = _cell_array(data, "U", "SV_U", "velocity")
+    if u is not None and getattr(u, "ndim", 1) == 2 and u.shape[1] >= 3:
+        velmag = C.velocity_magnitude(u[:, 0], u[:, 1], u[:, 2])
+    else:
+        vx = _cell_array(data, "VelocityX", "velocityX", "U_0", "Ux", "SV_U")
+        vy = _cell_array(data, "VelocityY", "velocityY", "U_1", "Uy", "SV_V")
+        vz = _cell_array(data, "VelocityZ", "velocityZ", "U_2", "Uz", "SV_W")
+        if vx is not None:
+            z = np.zeros_like(vx)
+            velmag = C.velocity_magnitude(vx, vy if vy is not None else z, vz if vz is not None else z)
+        else:
+            velmag = np.zeros_like(p_static)
+    if rho is None:
+        try:
+            from app.settings import settings
+            R = settings.physics.gas_constant
+        except Exception:  # noqa: BLE001 - 子进程可能加载不到 settings
+            R = 287.0
+        with np.errstate(divide="ignore", invalid="ignore"):
+            rho = np.asarray(p_static, float) / (R * np.maximum(np.asarray(t_static, float), 1e-6))
+    mach = _cell_array(data, *_MACH_NAMES)           # 有现成 Mach 场就用
+    if mach is None:
+        mach = C.mach_number(velmag, p_static, rho, gamma)
+    t0 = C.total_temperature(t_static, mach, gamma)
+    p0 = C.total_pressure(p_static, mach, gamma)
+    out, pos = {}, None
+    for key, arr in (("P_static", p_static), ("T_static", t_static),
+                     ("Mach", mach), ("T0", t0), ("P0", p0)):
+        pos, avg = A.slice_average(cx, np.asarray(arr, float), n_slices=n_slices)
+        out[key] = [None if not np.isfinite(v) else round(float(v), 4) for v in avg]
+    x_mm = [round(float(v) * 1000.0, 3) for v in pos]
+    return {"available": True, "x_mm": x_mm, "fields": out, "n_slices": len(x_mm)}
+
+
+def x_slice_openfoam(case_path: str, n_slices: int = 100, gamma: float | None = None) -> dict:
+    """进程内沿程面平均（OpenFOAM/Fluent，标准 VTK 直接读）。"""
+    if not (_is_openfoam(case_path) or _is_fluent(case_path)):
+        return {"available": False, "reason": "该格式非进程内可算（用 x_slice 分派到子进程）"}
     try:
-        import vtk  # noqa: F401
-        from vtk.util.numpy_support import vtk_to_numpy
         from app.services.render import openfoam_loader, fluent_loader
     except Exception as e:  # noqa: BLE001
         return {"available": False, "reason": f"VTK 不可用：{e}"}
@@ -77,57 +138,38 @@ def x_slice_openfoam(case_path: str, n_slices: int = 100, gamma: float | None = 
     if str(p).lower().endswith(".foam"):
         p = p.parent
     try:
-        if _is_fluent(case_path):
-            mb = fluent_loader.load_fluent(str(p))
-        else:
-            mb = openfoam_loader.load_openfoam(str(p))
-        vol = _volume_block(mb)
-        if vol is None or vol.GetNumberOfCells() == 0:
-            return {"available": False, "reason": "无体网格单元"}
-        import vtk
-        cc = vtk.vtkCellCenters()
-        cc.SetInputData(vol)
-        cc.Update()
-        centers = vtk_to_numpy(cc.GetOutput().GetPoints().GetData())
-        cx = centers[:, 0]
-
-        cd = vol.GetCellData()
-        # 场名兼容 OpenFOAM(p/T/rho/U) 与 Fluent(规范名 Pressure/Temperature/Density/VelocityX… 或 SV_*)
-        p_static = _cell_array(cd, "p", "P", "Pressure", "SV_P")
-        t_static = _cell_array(cd, "T", "Temperature", "SV_T")
-        rho = _cell_array(cd, "rho", "density", "Density", "SV_DENSITY")
-        u = _cell_array(cd, "U", "SV_U")
-        if p_static is None or t_static is None:
-            return {"available": False, "reason": "缺静压/静温场（p/T）"}
-        # 速度大小：单个 3 分量场（OpenFOAM U）或三个标量分量（Fluent VelocityX/Y/Z）
-        if u is not None and u.ndim == 2 and u.shape[1] >= 3:
-            velmag = C.velocity_magnitude(u[:, 0], u[:, 1], u[:, 2])
-        else:
-            vx = _cell_array(cd, "VelocityX", "U_0", "Ux")
-            vy = _cell_array(cd, "VelocityY", "U_1", "Uy")
-            vz = _cell_array(cd, "VelocityZ", "U_2", "Uz")
-            if vx is not None:
-                z = np.zeros_like(vx)
-                velmag = C.velocity_magnitude(vx, vy if vy is not None else z, vz if vz is not None else z)
-            else:
-                velmag = np.zeros_like(p_static)
-        # 密度缺省时用理想气体 ρ=p/(R·T)（可压缩 OpenFOAM 常不落 rho 场）
-        if rho is None:
-            from app.settings import settings
-            with np.errstate(divide="ignore", invalid="ignore"):
-                rho = np.asarray(p_static, float) / (settings.physics.gas_constant * np.maximum(np.asarray(t_static, float), 1e-6))
-        # 马赫/总温/总压（等熵，公式库）
-        mach = C.mach_number(velmag, p_static, rho, gamma)
-        t0 = C.total_temperature(t_static, mach, gamma)
-        p0 = C.total_pressure(p_static, mach, gamma)
-
-        out = {}
-        pos = None
-        for key, data in (("P_static", p_static), ("T_static", t_static),
-                          ("Mach", mach), ("T0", t0), ("P0", p0)):
-            pos, avg = A.slice_average(cx, np.asarray(data, float), n_slices=n_slices)
-            out[key] = [None if not np.isfinite(v) else round(float(v), 4) for v in avg]
-        x_mm = [round(float(v) * 1000.0, 3) for v in pos]
-        return {"available": True, "x_mm": x_mm, "fields": out, "n_slices": len(x_mm)}
+        mb = fluent_loader.load_fluent(str(p)) if _is_fluent(case_path) else openfoam_loader.load_openfoam(str(p))
+        return _compute_x_slice(mb, n_slices, gamma)
     except Exception as e:  # noqa: BLE001
         return {"available": False, "reason": f"沿程面平均计算失败：{e}"}
+
+
+def x_slice(case_path: str, n_slices: int = 100, gamma: float | None = None) -> dict:
+    """分派：OpenFOAM/Fluent 进程内算；CGNS 等需 Romtek 的格式走子进程（复用渲染那套引擎载入）。"""
+    if _is_openfoam(case_path) or _is_fluent(case_path):
+        return x_slice_openfoam(case_path, n_slices, gamma)
+    return _x_slice_subprocess(case_path, n_slices)
+
+
+def _x_slice_subprocess(case_path: str, n_slices: int = 100) -> dict:
+    """CGNS 等：Romtek 在子进程载入全体网格并算沿程面平均（与三维渲染同一 render_runner）。"""
+    import os
+    import subprocess
+    from app.services import viz
+    from app.settings import settings
+    if not viz._env_ready(case_path):
+        return {"available": False, "reason": "该格式需 Romtek 环境（PostProcessTool + SimGraph2），当前不可用"}
+    runner = Path(__file__).with_name("render_runner.py")
+    out = viz.preview_dir(case_path)
+    env = {**os.environ, "SIMGRAPH2_ROOT": str(settings.assets.simgraph2_root)}
+    try:
+        proc = subprocess.run(
+            [viz._render_python(case_path), str(runner), viz._render_source(case_path), str(out), f"xslice:{n_slices}"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=360, env=env)
+    except subprocess.TimeoutExpired:
+        return {"available": False, "reason": "沿程面平均子进程超时"}
+    res = viz._parse_last_json(proc.stdout)
+    if not res or not res.get("available"):
+        return {"available": False, "reason": (res or {}).get("reason") or (res or {}).get("error")
+                or (proc.stderr[-160:] if proc.stderr else "子进程计算失败")}
+    return res

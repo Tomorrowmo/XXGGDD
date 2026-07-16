@@ -222,6 +222,24 @@ def _render_turntable(case_path: str, out_dir: str, n_frames: int) -> dict:
     return {"ok": True, "images": imgs, "frames": len(imgs), "engine": engine, "mode": "turntable"}
 
 
+def _render_xslice(case_path: str, out_dir: str, n_slices: int) -> dict:
+    """沿程面平均：Romtek 载入全体网格 → 复用 sim_analysis 的核心计算 → 返回 JSON。"""
+    try:
+        mb, engine = _load_mb(case_path)
+    except Exception as e:  # noqa: BLE001
+        return {"available": False, "reason": str(e)[:200]}
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # 项目根
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    try:
+        from app.services import sim_analysis as SA
+        res = SA._compute_x_slice(mb, n_slices)
+        res["engine"] = engine
+        return res
+    except Exception as e:  # noqa: BLE001
+        return {"available": False, "reason": f"沿程面平均失败：{e}"}
+
+
 def _render_vtp(case_path: str, out_dir: str) -> dict:
     """导出边界面 VTP（供前端 vtk.js 交互三维）。"""
     try:
@@ -249,7 +267,15 @@ def main() -> None:
     os.makedirs(out_dir, exist_ok=True)
     _silence_vtk()   # 抑制 Windows 上 VTK 弹窗（否则看着像卡死）
     try:
-        if arg3 == "vtp":
+        if arg3.startswith("xslice"):
+            n = 100
+            if ":" in arg3:
+                try:
+                    n = max(10, min(400, int(arg3.split(":", 1)[1])))
+                except ValueError:
+                    n = 100
+            _emit(_render_xslice(case_path, out_dir, n))
+        elif arg3 == "vtp":
             _emit(_render_vtp(case_path, out_dir))
         elif arg3.startswith("turntable"):     # turntable:24
             n = 24

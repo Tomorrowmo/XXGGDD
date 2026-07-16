@@ -20,10 +20,12 @@ def test_x_slice_supported_formats():
     assert sim_analysis.x_slice_supported("x/case.foam") is True
     assert sim_analysis.x_slice_supported("x/a.cas.h5") is True   # Fluent 标准 VTK 进程内可读
     assert sim_analysis.x_slice_supported("x/a.cas") is True
-    assert sim_analysis.x_slice_supported("x/mesh.cgns") is False  # CGNS 需 Romtek 子进程
+    assert sim_analysis.x_slice_supported("x/mesh.cgns") is True  # CGNS 经 Romtek 子进程支持
+    assert sim_analysis.x_slice_supported("x/foo.txt") is False   # 非仿真格式
 
 
-def test_x_slice_unsupported_format():
+def test_x_slice_inproc_rejects_nonlocal():
+    # 进程内函数只认 OpenFOAM/Fluent；CGNS 交给子进程分派，直调进程内应拒
     d = sim_analysis.x_slice_openfoam("x/mesh.cgns")
     assert d["available"] is False
 
